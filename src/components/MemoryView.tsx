@@ -1,26 +1,25 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useStore } from "../store";
 import { db } from "../lib/db";
-import { MEMORY_KINDS, type MemoryItem, type MemoryKind } from "../types";
-import { Modal, Icon, Avatar } from "./ui";
+import { MEMORY_KINDS, type MemoryKind } from "../types";
+import { Modal, Icon, Avatar, SelectBox } from "./ui";
 
 export default function MemoryView() {
   const agents = useStore((s) => s.agents);
   const memoryAgentFilter = useStore((s) => s.memoryAgentFilter);
   const [filter, setFilter] = useState<string>(memoryAgentFilter ?? "all");
-  const [list, setList] = useState<MemoryItem[]>([]);
-  const [editing, setEditing] = useState<MemoryItem | "new" | null>(null);
+  const [editing, setEditing] = useState<import("../types").MemoryItem | "new" | null>(null);
 
-  const load = async () => {
-    const all =
-      filter === "all" ? await db.memories.toArray() : await db.memories.where("agentId").equals(filter).toArray();
-    all.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
-    setList(all);
-  };
-
-  useEffect(() => {
-    load();
-  }, [filter]);
+  const list =
+    useLiveQuery(async () => {
+      const all =
+        filter === "all"
+          ? await db.memories.toArray()
+          : await db.memories.where("agentId").equals(filter).toArray();
+      all.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
+      return all;
+    }, [filter]) ?? [];
 
   const agentOf = (id: string) => agents.find((a) => a.id === id);
   const kindInfo = (k: MemoryKind) => MEMORY_KINDS.find((x) => x.id === k) ?? MEMORY_KINDS[0];
@@ -84,7 +83,7 @@ export default function MemoryView() {
                   </div>
                 </div>
                 <div className="ops">
-                  <button className="icon-btn" title={m.pinned ? "取消置顶" : "置顶（永远记住）"} onClick={() => useStore.getState().updateMemory(m.id, { pinned: !m.pinned }).then(load)}>
+                  <button className="icon-btn" title={m.pinned ? "取消置顶" : "置顶（永远记住）"} onClick={() => useStore.getState().updateMemory(m.id, { pinned: !m.pinned })}>
                     <Icon name="pin" size={15} />
                   </button>
                   <button className="icon-btn" title="编辑" onClick={() => setEditing(m)}>
@@ -94,7 +93,7 @@ export default function MemoryView() {
                     className="icon-btn danger"
                     title="忘记"
                     onClick={() => {
-                      if (confirm("让智能体忘掉这条记忆？")) useStore.getState().deleteMemory(m.id).then(load);
+                      if (confirm("让智能体忘掉这条记忆？")) useStore.getState().deleteMemory(m.id);
                     }}
                   >
                     <Icon name="trash" size={15} />
@@ -110,10 +109,7 @@ export default function MemoryView() {
         <MemoryEditor
           memory={editing === "new" ? null : editing}
           defaultAgentId={filter !== "all" ? filter : agents[0]?.id}
-          onClose={() => {
-            setEditing(null);
-            load();
-          }}
+          onClose={() => setEditing(null)}
         />
       )}
     </div>
@@ -125,7 +121,7 @@ function MemoryEditor({
   defaultAgentId,
   onClose,
 }: {
-  memory: MemoryItem | null;
+  memory: import("../types").MemoryItem | null;
   defaultAgentId?: string;
   onClose: () => void;
 }) {
@@ -134,15 +130,15 @@ function MemoryEditor({
   const updateMemory = useStore((s) => s.updateMemory);
   const [content, setContent] = useState(memory?.content ?? "");
   const [kind, setKind] = useState<MemoryKind>(memory?.kind ?? "fact");
-  const [importance, setImportance] = useState(memory?.importance ?? 3);
+  const [importance, setImportance] = useState(String(memory?.importance ?? 3));
   const [agentId, setAgentId] = useState(memory?.agentId ?? defaultAgentId ?? "");
 
   const save = async () => {
     if (!content.trim() || !agentId) return;
     if (memory) {
-      await updateMemory(memory.id, { content: content.trim(), kind, importance });
+      await updateMemory(memory.id, { content: content.trim(), kind, importance: Number(importance) });
     } else {
-      await addMemory({ agentId, content: content.trim(), kind, importance, embedding: null });
+      await addMemory({ agentId, content: content.trim(), kind, importance: Number(importance), embedding: null });
     }
     onClose();
   };
@@ -175,34 +171,31 @@ function MemoryEditor({
       </div>
       <div className="field">
         <label>属于哪个智能体</label>
-        <select className="select input" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.emoji} {a.name}
-            </option>
-          ))}
-        </select>
+        <SelectBox
+          value={agentId || null}
+          onChange={(v) => setAgentId(v ?? "")}
+          options={agents.map((a) => ({ value: a.id, label: `${a.emoji} ${a.name}` }))}
+          placeholder="选择智能体"
+        />
       </div>
       <div className="row">
         <div className="field">
           <label>类型</label>
-          <select className="select input" value={kind} onChange={(e) => setKind(e.target.value as MemoryKind)}>
-            {MEMORY_KINDS.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.icon} {k.label}
-              </option>
-            ))}
-          </select>
+          <SelectBox
+            value={kind}
+            onChange={(v) => setKind((v ?? "fact") as MemoryKind)}
+            options={MEMORY_KINDS.map((k) => ({ value: k.id, label: `${k.icon} ${k.label}` }))}
+            placeholder="类型"
+          />
         </div>
         <div className="field">
           <label>重要度</label>
-          <select className="select input" value={importance} onChange={(e) => setImportance(Number(e.target.value))}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>
-                {"★".repeat(n)}（{n}）
-              </option>
-            ))}
-          </select>
+          <SelectBox
+            value={importance}
+            onChange={(v) => setImportance(v ?? "3")}
+            options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: `${"★".repeat(n)}（${n}）` }))}
+            placeholder="重要度"
+          />
         </div>
       </div>
     </Modal>

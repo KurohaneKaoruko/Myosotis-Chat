@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { Modal, Icon } from "./ui";
+import { Modal, Icon, SelectBox, Toggle } from "./ui";
 import { AGENT_PRESETS, type Agent } from "../types";
 
 const EMOJIS = [
@@ -68,18 +68,15 @@ function EditorBody({ agentId }: { agentId: string }) {
   const modelSelect = (label: string, role: "chat" | "vision" | "embedding", options: typeof chatModels) => (
     <div className="field">
       <label>{label}</label>
-      <select
-        className="select input"
-        value={form.models?.[role] ?? ""}
-        onChange={(e) => set({ models: { ...form.models, [role]: e.target.value || undefined } })}
-      >
-        <option value="">跟随全局默认</option>
-        {options.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label}（{providers.find((p) => p.id === m.providerId)?.name ?? "?"}）
-          </option>
-        ))}
-      </select>
+      <SelectBox
+        value={form.models?.[role] ?? null}
+        onChange={(v) => set({ models: { ...form.models, [role]: v ?? undefined } })}
+        options={options.map((m) => ({
+          value: m.id,
+          label: `${m.label}（${providers.find((p) => p.id === m.providerId)?.name ?? "?"}）`,
+        }))}
+        placeholder="跟随全局默认"
+      />
     </div>
   );
 
@@ -225,7 +222,7 @@ function EditorBody({ agentId }: { agentId: string }) {
           <div className="t">长期记忆</div>
           <div className="d">自动记住你的喜好与经历，跨对话保持。可在「记忆」页管理</div>
         </div>
-        <button className={`toggle ${form.memoryEnabled ? "on" : ""}`} onClick={() => set({ memoryEnabled: !form.memoryEnabled })} />
+        <Toggle checked={!!form.memoryEnabled} onChange={(v) => set({ memoryEnabled: v })} />
       </div>
 
       {(chatModels.length > 0 || visionModels.length > 0 || embedModels.length > 0) && (

@@ -20,10 +20,14 @@ export default function MessageBubble({
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
   const settings = useStore((s) => s.settings);
   const models = useStore((s) => s.models);
   const providers = useStore((s) => s.providers);
   const regenerate = useStore((s) => s.regenerate);
+  const deleteMessage = useStore((s) => s.deleteMessage);
+  const editAndResend = useStore((s) => s.editAndResend);
   const showToast = useStore((s) => s.showToast);
   const isUser = msg.role === "user";
   const text = streaming ?? msg.content;
@@ -87,7 +91,30 @@ export default function MessageBubble({
           </div>
         )}
         <div className={`bubble ${!isUser && !streaming ? "md" : ""}`}>
-          {streaming !== undefined && !text.trim() ? (
+          {editing ? (
+            <div className="edit-box">
+              <textarea
+                className="input"
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                rows={3}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                    editAndResend(msg.id, editText);
+                  }
+                }}
+              />
+              <div className="edit-ops">
+                <button className="btn sm ghost" onClick={() => setEditing(false)}>
+                  取消
+                </button>
+                <button className="btn sm primary" onClick={() => editAndResend(msg.id, editText)}>
+                  保存并重新发送
+                </button>
+              </div>
+            </div>
+          ) : streaming !== undefined && !text.trim() ? (
             <span className="typing">
               <i />
               <i />
@@ -102,7 +129,7 @@ export default function MessageBubble({
             </>
           )}
         </div>
-        {streaming === undefined && (
+        {streaming === undefined && !editing && (
           <div className="acts" style={isUser ? { justifyContent: "flex-end" } : undefined}>
             <span className="time">{formatTime(msg.createdAt)}</span>
             <button onClick={copy} title="复制">
@@ -118,6 +145,25 @@ export default function MessageBubble({
                 <Icon name="refresh" size={12} /> 重写
               </button>
             )}
+            {isUser && (
+              <button
+                title="编辑后重新发送"
+                onClick={() => {
+                  setEditText(msg.content);
+                  setEditing(true);
+                }}
+              >
+                <Icon name="edit" size={12} /> 编辑
+              </button>
+            )}
+            <button
+              title="删除这条消息"
+              onClick={() => {
+                if (confirm("删除这条消息？")) deleteMessage(msg.id);
+              }}
+            >
+              <Icon name="trash" size={12} /> 删除
+            </button>
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Toaster } from "sonner";
 import { useStore, applyTheme } from "./store";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
@@ -7,14 +8,13 @@ import MemoryView from "./components/MemoryView";
 import SettingsView from "./components/SettingsView";
 import AgentEditor from "./components/AgentEditor";
 import TitleBar from "./components/TitleBar";
-import { Icon, type IconName } from "./components/ui";
+import { Icon, Tip, TipFor, type IconName } from "./components/ui";
 
 export default function App() {
   const ready = useStore((s) => s.ready);
   const view = useStore((s) => s.view);
   const providers = useStore((s) => s.providers);
   const settings = useStore((s) => s.settings);
-  const toast = useStore((s) => s.toast);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const init = useStore((s) => s.init);
 
@@ -25,6 +25,10 @@ export default function App() {
   useEffect(() => {
     applyTheme(settings);
   }, [settings.themeId, settings.themeMode, settings]);
+
+  const dark =
+    settings.themeMode === "dark" ||
+    (settings.themeMode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
 
   if (!ready) {
     return (
@@ -40,22 +44,37 @@ export default function App() {
   }
 
   return (
-    <div className="app-root">
-      <TitleBar />
-      <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`}>
-        <Sidebar />
-        {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
-        <main className="main" data-wallpaper={settings.wallpaper} key={view}>
-          {view === "chat" && <ChatView />}
-          {view === "agents" && <AgentsView />}
-          {view === "memory" && <MemoryView />}
-          {view === "settings" && <SettingsView />}
-        </main>
-        <AgentEditor />
-        {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
-        <TabBar />
+    <Tip.Provider delayDuration={350}>
+      <div className="app-root">
+        <TitleBar />
+        <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`}>
+          <Sidebar />
+          {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
+          <main className="main" data-wallpaper={settings.wallpaper} key={view}>
+            {view === "chat" && <ChatView />}
+            {view === "agents" && <AgentsView />}
+            {view === "memory" && <MemoryView />}
+            {view === "settings" && <SettingsView />}
+          </main>
+          <AgentEditor />
+          <TabBar />
+        </div>
+        <Toaster
+          position="top-center"
+          theme={dark ? "dark" : "light"}
+          toastOptions={{
+            style: {
+              background: "var(--surface)",
+              color: "var(--text)",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow-lg)",
+              borderRadius: "13px",
+              fontSize: "13px",
+            },
+          }}
+        />
       </div>
-    </div>
+    </Tip.Provider>
   );
 }
 

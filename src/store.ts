@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { toast } from "sonner";
 import { db, exportAll, importAll } from "./lib/db";
 import { chatComplete } from "./lib/api";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle } from "./lib/memory";
@@ -17,6 +18,12 @@ import {
 } from "./types";
 
 export type View = "chat" | "agents" | "memory" | "settings";
+
+function sortConvos(list: Conversation[]): Conversation[] {
+  return [...list].sort(
+    (a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || b.updatedAt - a.updatedAt
+  );
+}
 
 interface Toast {
   text: string;
@@ -38,7 +45,6 @@ interface AppState {
   activeConvoId: string | null;
   editingAgentId: string | null; // agent editor open
   sidebarOpen: boolean; // mobile drawer
-  toast: Toast | null;
   streamingConvoId: string | null;
   streamText: string;
   memoryAgentFilter: string | null;
@@ -69,11 +75,17 @@ interface AppState {
   newConversation: (agentId: string) => Promise<string>;
   openConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
+  pinConversation: (id: string, pinned: boolean) => Promise<void>;
+  renameConversation: (id: string, title: string) => Promise<void>;
+  clearConversation: (id: string) => Promise<void>;
+  exportConversation: (id: string) => Promise<void>;
 
   // ----- messaging -----
   send: (text: string, images?: string[]) => Promise<void>;
   stop: () => void;
   regenerate: () => Promise<void>;
+  deleteMessage: (id: string) => Promise<void>;
+  editAndResend: (messageId: string, newText: string) => Promise<void>;
 
   // ----- memories -----
   addMemory: (m: Omit<MemoryItem, "id" | "createdAt" | "updatedAt" | "hitCount" | "pinned">) => Promise<void>;
@@ -114,7 +126,6 @@ export const useStore = create<AppState>()(
       activeConvoId: null,
       editingAgentId: null,
       sidebarOpen: false,
-      toast: null,
       streamingConvoId: null,
       streamText: "",
       memoryAgentFilter: null,
@@ -134,6 +145,7 @@ export const useStore = create<AppState>()(
             db.agents.orderBy("createdAt").toArray(),
             db.conversations.orderBy("updatedAt").reverse().toArray(),
           ]);
+          convos = sortConvos(convos);
         } catch (e) {
           console.error("[init] database error:", e);
           get().showToast("本地数据库读取失败，部分数据可能不可用", "error");
@@ -149,10 +161,9 @@ export const useStore = create<AppState>()(
       },
 
       showToast(text, kind = "info") {
-        set({ toast: { text, kind } });
-        setTimeout(() => {
-          if (get().toast?.text === text) set({ toast: null });
-        }, 3600);
+        if (kind === "error") toast.error(text);
+        else if (kind === "success") toast.success(text);
+        else toast(text);
       },
 
       setSettings(patch) {
@@ -305,7 +316,7 @@ export const useStore = create<AppState>()(
           await db.messages.add(greeting);
         }
         set({
-          convos: [convo, ...get().convos],
+          convos: sortConvos([convo, ...get().convos]),
           activeConvoId: convo.id,
           messages: greeting ? [greeting] : [],
           view: "chat",
@@ -329,6 +340,67 @@ export const useStore = create<AppState>()(
           set({ activeConvoId: convos[0]?.id ?? null, messages: [] });
           if (convos[0]) await get().openConversation(convos[0].id);
         }
+      },
+      async pinConversation(id, pinned) {
+        await db.conversations.update(id, { pinned });
+        set({ convos: sortConvos(get().convos.map((c) => (c.id === id ? { ...c, pinned } : c))) });
+      },
+      async renameConversation(id, title) {
+        const t = title.trim().slice(0, 24);
+        if (!t) return;
+        await db.conversations.update(id, { title: t });
+        set({ convos: get().convos.map((c) => (c.id === id ? { ...c, title: t } : c)) });
+      },
+      async clearConversation(id) {
+        await db.messages.where("conversationId").equals(id).delete();
+        await db.conversations.update(id, {
+          summary: "",
+          summarizedUntil: 0,
+          lastMessage: "",
+          title: "新对话",
+        });
+        const agent = get().agents.find((a) => a.id === get().convos.find((c) => c.id === id)?.agentId);
+        set({
+          convos: get().convos.map((c) =>
+            c.id === id ? { ...c, summary: "", summarizedUntil: 0, lastMessage: "", title: "新对话" } : c
+          ),
+          messages: [],
+        });
+        // restore greeting like a fresh conversation
+        if (agent?.greeting.trim() && get().activeConvoId === id) {
+          const greeting = {
+            id: uid("msg"),
+            conversationId: id,
+            role: "assistant" as const,
+            content: agent.greeting,
+            createdAt: Date.now() + 1,
+            status: "ok" as const,
+          };
+          await db.messages.add(greeting);
+          set({ messages: [greeting] });
+        }
+      },
+      async exportConversation(id) {
+        const [convo, msgs] = await Promise.all([
+          db.conversations.get(id),
+          db.messages.where("conversationId").equals(id).sortBy("createdAt"),
+        ]);
+        if (!convo) return;
+        const agent = get().agents.find((a) => a.id === convo.agentId);
+        const lines = [`# ${agent?.name ?? "AI"} · ${convo.title}`, ""];
+        for (const m of msgs) {
+          const who = m.role === "user" ? get().settings.userName || "我" : agent?.name ?? "AI";
+          const time = new Date(m.createdAt).toLocaleString("zh-CN");
+          lines.push(`**${who}** · ${time}`, "", m.content, "");
+        }
+        const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${convo.title || "对话"}.md`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        get().showToast("已导出为 Markdown", "success");
       },
 
       // -------------------------------------------------------
@@ -443,7 +515,7 @@ export const useStore = create<AppState>()(
           messages: [...s.messages, aiMsg],
           streamingConvoId: null,
           streamText: "",
-          convos: [updatedConvo, ...s.convos.filter((c) => c.id !== convo.id)],
+          convos: sortConvos([updatedConvo, ...s.convos.filter((c) => c.id !== convo.id)]),
         }));
 
         // 7. background jobs: title + memory extraction (fire & forget)
@@ -490,6 +562,35 @@ export const useStore = create<AppState>()(
           set({ messages: kept });
           await get().send(lastUser.content, lastUser.images);
         }
+      },
+
+      async deleteMessage(id) {
+        const msg = await db.messages.get(id);
+        if (!msg) return;
+        await db.messages.delete(id);
+        set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
+        // refresh preview in list
+        const last = await db.messages.where("conversationId").equals(msg.conversationId).reverse().sortBy("createdAt");
+        const lastMsg = last[0];
+        const patch = { lastMessage: lastMsg ? (lastMsg.content || "…").slice(0, 40) : "" };
+        await db.conversations.update(msg.conversationId, patch);
+        set((s) => ({ convos: s.convos.map((c) => (c.id === msg.conversationId ? { ...c, ...patch } : c)) }));
+      },
+
+      async editAndResend(messageId, newText) {
+        if (get().streamingConvoId) return;
+        const msg = await db.messages.get(messageId);
+        if (!msg || msg.role !== "user") return;
+        const text = newText.trim();
+        if (!text) return;
+        // remove this message and everything after, then resend
+        const all = await db.messages.where("conversationId").equals(msg.conversationId).sortBy("createdAt");
+        const idx = all.findIndex((m) => m.id === messageId);
+        if (idx < 0) return;
+        const toDelete = all.slice(idx).map((m) => m.id);
+        await db.messages.bulkDelete(toDelete);
+        set({ messages: all.slice(0, idx) });
+        await get().send(text, msg.images);
       },
 
       // -------------------------------------------------------

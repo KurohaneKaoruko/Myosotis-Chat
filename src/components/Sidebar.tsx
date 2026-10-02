@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../store";
-import { Avatar, Icon } from "./ui";
+import { Avatar, Icon, Menu, PromptModal } from "./ui";
 import { formatTime } from "../lib/utils";
 
 export default function Sidebar() {
@@ -13,8 +13,11 @@ export default function Sidebar() {
   const openConversation = useStore((s) => s.openConversation);
   const newConversation = useStore((s) => s.newConversation);
   const deleteConversation = useStore((s) => s.deleteConversation);
+  const pinConversation = useStore((s) => s.pinConversation);
+  const renameConversation = useStore((s) => s.renameConversation);
   const settings = useStore((s) => s.settings);
   const [search, setSearch] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   const agentOf = (id: string) => agents.find((a) => a.id === id);
   const q = search.trim().toLowerCase();
@@ -81,21 +84,40 @@ export default function Sidebar() {
                   <Avatar agent={agent} />
                   <div className="meta">
                     <div className="t">
-                      <span className="name">{agent.name} · {c.title}</span>
+                      <span className="name">
+                        {c.pinned && <span className="pin-mark">📌</span>}
+                        {agent.name} · {c.title}
+                      </span>
                       <span className="time">{formatTime(c.updatedAt)}</span>
                     </div>
                     <div className="preview">{c.lastMessage || "…"}</div>
                   </div>
-                  <button
-                    className="del"
-                    title="删除对话"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`删除与「${agent.name}」的这段对话？（记忆不受影响）`)) deleteConversation(c.id);
-                    }}
-                  >
-                    <Icon name="trash" size={13} />
-                  </button>
+                  <div className="convo-ops" onClick={(e) => e.stopPropagation()}>
+                    <Menu
+                      trigger={
+                        <button className="ops-btn" title="更多">
+                          <Icon name="dots" size={15} />
+                        </button>
+                      }
+                      items={[
+                        {
+                          label: c.pinned ? "取消置顶" : "置顶",
+                          icon: "pin",
+                          onClick: () => pinConversation(c.id, !c.pinned),
+                        },
+                        { label: "重命名", icon: "edit", onClick: () => setRenaming(c.id) },
+                        "separator",
+                        {
+                          label: "删除对话",
+                          icon: "trash",
+                          danger: true,
+                          onClick: () => {
+                            if (confirm(`删除与「${agent.name}」的这段对话？（记忆不受影响）`)) deleteConversation(c.id);
+                          },
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -131,6 +153,19 @@ export default function Sidebar() {
           {settings.userName ? `${settings.userName}，` : ""}数据仅保存在本机 🔒
         </div>
       </div>
+
+      {renaming && (
+        <PromptModal
+          title="重命名对话"
+          label="对话名称"
+          initial={convos.find((c) => c.id === renaming)?.title}
+          onClose={() => setRenaming(null)}
+          onConfirm={(v) => {
+            renameConversation(renaming, v);
+            setRenaming(null);
+          }}
+        />
+      )}
     </aside>
   );
 }

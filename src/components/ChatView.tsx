@@ -1,7 +1,7 @@
 import { useEffect, useRef, Fragment } from "react";
 import { useStore } from "../store";
 import { resolveModel } from "../lib/utils";
-import { Avatar, Icon } from "./ui";
+import { Avatar, Icon, Menu, TipFor } from "./ui";
 import MessageBubble from "./MessageBubble";
 import Composer from "./Composer";
 
@@ -35,6 +35,9 @@ export default function ChatView() {
   const setEditing = useStore((s) => s.setEditingAgentId);
   const newConversation = useStore((s) => s.newConversation);
   const send = useStore((s) => s.send);
+  const clearConversation = useStore((s) => s.clearConversation);
+  const exportConversation = useStore((s) => s.exportConversation);
+  const deleteConversation = useStore((s) => s.deleteConversation);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
@@ -99,12 +102,33 @@ export default function ChatView() {
           </div>
         </div>
         <div className="spacer" />
-        <button className="icon-btn" title="新对话" onClick={() => newConversation(agent.id)}>
-          <Icon name="plus" />
-        </button>
-        <button className="icon-btn" title="智能体设定" onClick={() => setEditing(agent.id)}>
-          <Icon name="edit" />
-        </button>
+        <TipFor text="开始新对话">
+          <button className="icon-btn" onClick={() => newConversation(agent.id)}>
+            <Icon name="plus" />
+          </button>
+        </TipFor>
+        <TipFor text="智能体设定">
+          <button className="icon-btn" onClick={() => setEditing(agent.id)}>
+            <Icon name="edit" />
+          </button>
+        </TipFor>
+        <Menu
+          trigger={
+            <button className="icon-btn" title="更多">
+              <Icon name="dots" />
+            </button>
+          }
+          items={[
+            { label: "导出为 Markdown", icon: "download", onClick: () => exportConversation(convo.id) },
+            { label: "清空对话（保留记忆）", icon: "broom", onClick: () => {
+                if (confirm("清空这段对话的所有消息？智能体的长期记忆不受影响。")) clearConversation(convo.id);
+              } },
+            "separator",
+            { label: "删除对话", icon: "trash", danger: true, onClick: () => {
+                if (confirm(`删除与「${agent.name}」的这段对话？（记忆不受影响）`)) deleteConversation(convo.id);
+              } },
+          ]}
+        />
       </header>
       <div className="chat-scroll" onScroll={onScroll} ref={scrollRef}>
         <div className="msg-list">

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { listRemoteModels } from "../lib/api";
 import { friendlyError } from "../lib/utils";
-import { Modal, Icon } from "./ui";
+import { Modal, Icon, SelectBox, Toggle } from "./ui";
 import type { ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
 
 const PROTOCOL_LABELS: Record<Protocol, string> = {
@@ -425,19 +425,13 @@ function DefaultModelsCard() {
               <div className="t">{row.label}</div>
               <div className="d">{row.desc}</div>
             </div>
-            <select
-              className="select"
-              style={{ maxWidth: 220 }}
-              value={settings.defaults[row.role] ?? ""}
-              onChange={(e) => setDefault(row.role, e.target.value || null)}
-            >
-              <option value="">不设置</option>
-              {options.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label} · {providerName(m.providerId)}
-                </option>
-              ))}
-            </select>
+            <SelectBox
+              value={settings.defaults[row.role]}
+              onChange={(v) => setDefault(row.role, v)}
+              options={options.map((m) => ({ value: m.id, label: `${m.label} · ${providerName(m.providerId)}` }))}
+              placeholder="不设置"
+              style={{ maxWidth: 230 }}
+            />
           </div>
         );
       })}
@@ -514,14 +508,14 @@ function VoiceCard() {
           <div className="t">使用系统朗读</div>
           <div className="d">免费、离线可用；关闭后使用云端语音模型</div>
         </div>
-        <button className={`toggle ${settings.browserTts ? "on" : ""}`} onClick={() => setSettings({ browserTts: !settings.browserTts })} />
+        <Toggle checked={settings.browserTts} onChange={(v) => setSettings({ browserTts: v })} />
       </div>
       <div className="set-row">
         <div className="info">
           <div className="t">使用系统语音识别</div>
           <div className="d">按住麦克风说话变文字；部分浏览器不支持时自动改用云端</div>
         </div>
-        <button className={`toggle ${settings.browserStt ? "on" : ""}`} onClick={() => setSettings({ browserStt: !settings.browserStt })} />
+        <Toggle checked={settings.browserStt} onChange={(v) => setSettings({ browserStt: v })} />
       </div>
     </div>
   );

@@ -1,4 +1,9 @@
 import type { ReactNode } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import * as Select from "@radix-ui/react-select";
+import * as Switch from "@radix-ui/react-switch";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import type { Agent } from "../types";
 
 // ============================================================
@@ -7,11 +12,7 @@ import type { Agent } from "../types";
 const P = (d: string, key?: string) => <path key={key} d={d} />;
 
 const paths: Record<string, ReactNode> = {
-  chat: (
-    <>
-      {P("M21 11.5a8.4 8.4 0 0 1-8.5 8.4 8.6 8.6 0 0 1-3.7-.8L3 21l1.9-5.3a8.4 8.4 0 1 1 16.1-4.2z")}
-    </>
-  ),
+  chat: P("M21 11.5a8.4 8.4 0 0 1-8.5 8.4 8.6 8.6 0 0 1-3.7-.8L3 21l1.9-5.3a8.4 8.4 0 1 1 16.1-4.2z"),
   agents: (
     <>
       {P("M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z")}
@@ -85,10 +86,11 @@ const paths: Record<string, ReactNode> = {
   check: P("M4.5 12.5 10 18 19.5 6.5"),
   menu: P("M4 7h16M4 12h16M4 17h16"),
   down: P("M6 9l6 6 6-6"),
-  search: (
+  dots: (
     <>
-      {P("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z")}
-      {P("m16 16 5 5", "b")}
+      {P("M5 12h.01")}
+      {P("M12 12h.01")}
+      {P("M19 12h.01")}
     </>
   ),
   user: (
@@ -97,11 +99,7 @@ const paths: Record<string, ReactNode> = {
       {P("M5 21a7 7 0 0 1 14 0", "b")}
     </>
   ),
-  key: (
-    <>
-      {P("M14.5 9.5a4.5 4.5 0 1 0-4.8 4.48L4 19.7V21h2.3l.7-.7V19h1.6l.7-.7V17h1.7l1.1-1.1a4.5 4.5 0 0 0 6.9-3.8 4.5 4.5 0 0 0-4.5-4.5z")}
-    </>
-  ),
+  key: P("M14.5 9.5a4.5 4.5 0 1 0-4.8 4.48L4 19.7V21h2.3l.7-.7V19h1.6l.7-.7V17h1.7l1.1-1.1a4.5 4.5 0 0 0 6.9-3.8 4.5 4.5 0 0 0-4.5-4.5z"),
   download: (
     <>
       {P("M12 4v11")}
@@ -122,6 +120,19 @@ const paths: Record<string, ReactNode> = {
       {P("M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5", "b")}
     </>
   ),
+  search: (
+    <>
+      {P("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z")}
+      {P("m16 16 5 5", "b")}
+    </>
+  ),
+  broom: (
+    <>
+      {P("M14 3l7 7")}
+      {P("M9 14 4 19l1 1 5-5", "b")}
+      {P("M10 4l10 10-4 4L6 8z", "c")}
+    </>
+  ),
 };
 
 export type IconName = keyof typeof paths;
@@ -134,7 +145,7 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
       height={size}
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth={name === "dots" ? 3 : 1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -166,7 +177,7 @@ export function Avatar({ agent, size = 42, radius }: { agent: Agent; size?: numb
 }
 
 // ============================================================
-// Modal shell
+// Modal (Radix Dialog): ESC / backdrop close, focus trap, a11y
 // ============================================================
 export function Modal({
   title,
@@ -180,17 +191,181 @@ export function Modal({
   footer?: ReactNode;
 }) {
   return (
-    <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="modal-head">
-          <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="关闭">
-            <Icon name="x" />
-          </button>
-        </div>
-        {children}
-        {footer && <div className="modal-foot">{footer}</div>}
-      </div>
-    </div>
+    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="modal-mask" />
+        <Dialog.Content className="modal" onInteractOutside={(e) => e.preventDefault()}>
+          <div className="modal-head">
+            <Dialog.Title>{title}</Dialog.Title>
+            <button className="icon-btn" onClick={onClose} aria-label="关闭">
+              <Icon name="x" />
+            </button>
+          </div>
+          {children}
+          {footer && <div className="modal-foot">{footer}</div>}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
+}
+
+// prompt-style small modal
+export function PromptModal({
+  title,
+  label,
+  initial,
+  onConfirm,
+  onClose,
+  confirmText = "确定",
+}: {
+  title: string;
+  label: string;
+  initial?: string;
+  onConfirm: (value: string) => void;
+  onClose: () => void;
+  confirmText?: string;
+}) {
+  return (
+    <Modal title={title} onClose={onClose} footer={
+      <>
+        <button className="btn ghost" onClick={onClose}>取消</button>
+        <button className="btn primary" onClick={() => onConfirm((document.getElementById("prompt-input") as HTMLInputElement)?.value ?? "")}>
+          {confirmText}
+        </button>
+      </>
+    }>
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label>{label}</label>
+        <input id="prompt-input" className="input" defaultValue={initial} autoFocus
+          onKeyDown={(e) => { if (e.key === "Enter") onConfirm((e.target as HTMLInputElement).value); }} />
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================
+// Select (Radix Select), styled to match .input
+// ============================================================
+const NONE = "__none__";
+
+export function SelectBox({
+  value,
+  onChange,
+  options,
+  placeholder = "请选择",
+  style,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <Select.Root value={value ?? NONE} onValueChange={(v) => onChange(v === NONE ? null : v)}>
+      <Select.Trigger className="select input" style={style} aria-label={placeholder}>
+        <Select.Value placeholder={placeholder} />
+        <Select.Icon className="select-caret">
+          <Icon name="down" size={15} />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content className="rd-content" position="popper" sideOffset={6}>
+          <Select.Viewport className="rd-viewport">
+            <Select.Item className="rd-item" value={NONE}>
+              <Select.ItemText>{placeholder}</Select.ItemText>
+              <Select.ItemIndicator className="rd-indicator">
+                <Icon name="check" size={13} />
+              </Select.ItemIndicator>
+            </Select.Item>
+            {options.map((o) => (
+              <Select.Item className="rd-item" key={o.value} value={o.value}>
+                <Select.ItemText>{o.label}</Select.ItemText>
+                <Select.ItemIndicator className="rd-indicator">
+                  <Icon name="check" size={13} />
+                </Select.ItemIndicator>
+              </Select.Item>
+            ))}
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+}
+
+// ============================================================
+// Switch (Radix)
+// ============================================================
+export function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Switch.Root className={`toggle ${checked ? "on" : ""}`} checked={checked} onCheckedChange={onChange}>
+      <Switch.Thumb className="toggle-thumb" />
+    </Switch.Root>
+  );
+}
+
+// ============================================================
+// Dropdown menu (Radix)
+// ============================================================
+export type MenuItemSpec =
+  | {
+      label: string;
+      icon?: IconName;
+      danger?: boolean;
+      onClick: () => void;
+    }
+  | "separator";
+
+export function Menu({
+  trigger,
+  items,
+  align = "end",
+}: {
+  trigger: ReactNode;
+  items: MenuItemSpec[];
+  align?: "start" | "center" | "end";
+}) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="dd-content" sideOffset={6} align={align}>
+          {items.map((item, i) =>
+            item === "separator" ? (
+              <DropdownMenu.Separator key={i} className="dd-sep" />
+            ) : (
+              <DropdownMenu.Item key={i} className={`dd-item ${item.danger ? "danger" : ""}`} onSelect={item.onClick}>
+                {item.icon && <Icon name={item.icon} size={15} />}
+                {item.label}
+              </DropdownMenu.Item>
+            )
+          )}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+// ============================================================
+// Tooltip (Radix) — mount <Tip.Provider> once at app root
+// ============================================================
+export const Tip = {
+  Provider: Tooltip.Provider,
+  Tip: function TipInner({ text, children }: { text: string; children: ReactNode }) {
+    return (
+      <Tooltip.Root delayDuration={350}>
+        <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="tip" sideOffset={6}>
+            {text}
+            <Tooltip.Arrow className="tip-arrow" />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    );
+  },
+};
+
+export function TipFor({ text, children }: { text: string; children: ReactNode }) {
+  return <Tip.Tip text={text}>{children}</Tip.Tip>;
 }

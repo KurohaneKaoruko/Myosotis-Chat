@@ -66,6 +66,7 @@ export interface Conversation {
   agentId: string;
   title: string;
   lastMessage: string;
+  pinned?: boolean;
   summary: string; // rolling summary of older messages
   summarizedUntil: number; // messages older than this are covered by summary
   createdAt: number;
