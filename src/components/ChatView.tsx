@@ -97,8 +97,13 @@ export default function ChatView() {
         <Avatar agent={agent} size={38} radius={12} />
         <div>
           <div className="title">{agent.name}</div>
-          <div className="sub" style={{ color: chatRm ? undefined : "var(--danger)" }}>
-            {chatRm ? chatRm.model.label : "未配置模型"}
+          <div
+            className="sub"
+            style={{ color: chatRm ? undefined : "#f59e0b", cursor: chatRm ? "default" : "pointer" }}
+            onClick={chatRm ? undefined : () => useStore.getState().setView("settings")}
+            title={chatRm ? undefined : "点击前往设置"}
+          >
+            {chatRm ? chatRm.model.label : "⚠ 未配置模型 · 点击设置"}
           </div>
         </div>
         <div className="spacer" />

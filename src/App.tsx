@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { useStore, applyTheme } from "./store";
+import Rail from "./components/Rail";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import AgentsView from "./components/AgentsView";
@@ -48,6 +49,7 @@ export default function App() {
       <div className="app-root">
         <TitleBar />
         <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`}>
+          <Rail />
           <Sidebar />
           {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
           <main className="main" data-wallpaper={settings.wallpaper} key={view}>
