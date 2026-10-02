@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Myosotis</title>
+    <script>
+      // Prevent theme flicker on startup
+      (function () {
+        try {
+          var raw = localStorage.getItem("myosotis.settings");
+          var theme = raw ? (JSON.parse(raw).state || {}).themeId || "azure" : "azure";
+          var mode = raw ? (JSON.parse(raw).state || {}).themeMode || "auto" : "auto";
+          var dark = mode === "dark" || (mode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          root.dataset.theme = theme;
+          root.dataset.mode = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

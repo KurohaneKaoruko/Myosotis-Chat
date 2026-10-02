@@ -1,0 +1,93 @@
+/* ============================================================
+   Theme system: 6 accent palettes × light/dark.
+   All colors flow through CSS variables set on <html data-theme data-mode>.
+   ============================================================ */
+
+:root {
+  --radius: 14px;
+  --radius-lg: 20px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC",
+    "HarmonyOS Sans SC", "Noto Sans SC", sans-serif;
+  --mono: ui-monospace, "Cascadia Code", Consolas, "SF Mono", monospace;
+}
+
+/* ---- light mode base ---- */
+:root[data-mode="light"] {
+  --bg: #eef1f6;
+  --sidebar-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f4f6fa;
+  --surface-3: #e9edf3;
+  --text: #1a1d26;
+  --text-2: #5a6272;
+  --text-3: #9aa1b0;
+  --border: #e3e7ee;
+  --shadow: 0 2px 16px rgba(20, 24, 40, 0.06);
+  --shadow-lg: 0 8px 32px rgba(20, 24, 40, 0.12);
+  --bubble-ai: #ffffff;
+  --bubble-ai-text: var(--text);
+  --code-bg: #f2f4f8;
+  --danger: #e5484d;
+}
+
+/* ---- dark mode base ---- */
+:root[data-mode="dark"] {
+  --bg: #101218;
+  --sidebar-bg: #171a22;
+  --surface: #1d212b;
+  --surface-2: #232834;
+  --surface-3: #2b3140;
+  --text: #eceef4;
+  --text-2: #a4abbb;
+  --text-3: #6b7284;
+  --border: #2a2f3b;
+  --shadow: 0 2px 16px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --bubble-ai: #222734;
+  --bubble-ai-text: var(--text);
+  --code-bg: #141821;
+  --danger: #ff6369;
+}
+
+/* ---- accent palettes ---- */
+:root[data-theme="azure"] {
+  --accent: #3b82f6;
+  --accent-2: #6366f1;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(99, 102, 241, 0.12);
+}
+:root[data-theme="violet"] {
+  --accent: #8b5cf6;
+  --accent-2: #d946ef;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(139, 92, 246, 0.12);
+}
+:root[data-theme="rose"] {
+  --accent: #f43f5e;
+  --accent-2: #fb7185;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(244, 63, 94, 0.12);
+}
+:root[data-theme="forest"] {
+  --accent: #10b981;
+  --accent-2: #14b8a6;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(16, 185, 129, 0.12);
+}
+:root[data-theme="amber"] {
+  --accent: #f59e0b;
+  --accent-2: #f97316;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(245, 158, 11, 0.14);
+}
+:root[data-theme="ink"] {
+  --accent: #475569;
+  --accent-2: #334155;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(71, 85, 105, 0.12);
+}
+:root[data-mode="dark"][data-theme="ink"] {
+  --accent: #94a3b8;
+  --accent-2: #cbd5e1;
+  --accent-contrast: #101218;
+}
