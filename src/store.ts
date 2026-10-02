@@ -5,7 +5,6 @@ import { chatComplete } from "./lib/api";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle } from "./lib/memory";
 import { uid, now, resolveModel, friendlyError, plainPreview } from "./lib/utils";
 import {
-  AGENT_PRESETS,
   DEFAULT_SETTINGS,
   type Agent,
   type ChatMessage,
@@ -62,7 +61,7 @@ interface AppState {
   setDefault: (role: ModelRole, modelId: string | null) => void;
 
   // ----- agents -----
-  createAgent: (presetIdx?: number) => Promise<Agent>;
+  createAgent: () => Promise<Agent>;
   updateAgent: (id: string, patch: Partial<Agent>) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
 
@@ -135,13 +134,6 @@ export const useStore = create<AppState>()(
             db.agents.orderBy("createdAt").toArray(),
             db.conversations.orderBy("updatedAt").reverse().toArray(),
           ]);
-          // seed default agent on first launch
-          if (!agents.length) {
-            const preset = AGENT_PRESETS[0];
-            const agent: Agent = { ...preset, id: uid("agt"), createdAt: now(), updatedAt: now() };
-            await db.agents.add(agent);
-            agents.push(agent);
-          }
         } catch (e) {
           console.error("[init] database error:", e);
           get().showToast("本地数据库读取失败，部分数据可能不可用", "error");
@@ -244,9 +236,20 @@ export const useStore = create<AppState>()(
       },
 
       // -------------------------------------------------------
-      async createAgent(presetIdx = 3) {
-        const preset = AGENT_PRESETS[presetIdx] ?? AGENT_PRESETS[3];
-        const agent: Agent = { ...preset, id: uid("agt"), createdAt: now(), updatedAt: now() };
+      async createAgent() {
+        const agent: Agent = {
+          id: uid("agt"),
+          name: "新智能体",
+          emoji: "✨",
+          hue: Math.floor(Math.random() * 360),
+          persona: "",
+          greeting: "",
+          suggestions: [],
+          memoryEnabled: true,
+          models: {},
+          createdAt: now(),
+          updatedAt: now(),
+        };
         await db.agents.add(agent);
         set({ agents: [...get().agents, agent], editingAgentId: agent.id });
         return agent;

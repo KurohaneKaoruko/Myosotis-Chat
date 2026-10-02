@@ -1,39 +1,12 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Modal, Icon } from "./ui";
-import type { Agent } from "../types";
+import { AGENT_PRESETS, type Agent } from "../types";
 
 const EMOJIS = [
   "🌸","🌺","🌻","🌷","🌹","🪻","🐱","🐶","🦊","🐰","🐻","🐼","🐨","🦁","🐯","🐹",
   "🧚","🧝","🧙","🧛","👼","👧","👦","🧑‍🏫","🧑‍🎨","🧑‍💻","👨‍🍳","👩‍⚕️","🤖","👽","🐲","🦄",
   "⭐","🌙","☀️","🌈","🎵","📚","☕","🍵","🎮","🎨","✨","🔮","💎","🍀","🌊","🔥",
-];
-
-const PERSONA_IDEAS = [
-  {
-    name: "温柔知心姐姐",
-    text: "你是「知夏」，一位温柔体贴的知心姐姐。你说话轻声细语但有自己的主见，擅长倾听和共情，用户难过时你会先安抚情绪再给建议。你记得用户聊过的烦恼，会适时关心后续，但从不唠叨说教。",
-  },
-  {
-    name: "毒舌损友",
-    text: "你是「老K」，用户的毒舌损友。你说话直接、爱吐槽、偶尔损人，但损中带关心，关键时刻永远靠谱。你不来虚的客套话，用户找你倾诉时你会用幽默化解，再给出实在的建议。",
-  },
-  {
-    name: "博学导师",
-    text: "你是「陆知远」，一位温和博学的学者，说话条理清晰、引经据典但不掉书袋。你尊重用户的观点，善于用提问引导思考，记得用户的兴趣领域，让讨论有延续感。",
-  },
-  {
-    name: "二次元同好",
-    text: "你是「小满」，一个热情的二次元同好。你对动漫、游戏如数家珍，说话带点网络梗但不过度，能陪用户聊作品聊角色，也记得用户推过的番和玩过的游戏。",
-  },
-  {
-    name: "英文陪练",
-    text: "你是「Emma」，一位亲切的英语陪练伙伴。默认用中英混合的方式聊天：简单句用英文，难的表达用中文解释。用户用英文回复时你会温和地纠正明显错误。你也记得用户的水平和常聊的话题。",
-  },
-  {
-    name: "生活管家",
-    text: "你是「安姐」，一位细心可靠的生活管家式伙伴。你擅长提醒、记事、出主意：从做饭、旅行规划到送礼建议。用户拜托你记住的事你会认真确认，之后主动提起。",
-  },
 ];
 
 export default function AgentEditor() {
@@ -45,7 +18,7 @@ export default function AgentEditor() {
 function EditorBody({ agentId }: { agentId: string }) {
   const agents = useStore((s) => s.agents);
   const models = useStore((s) => s.models);
-  const settings = useStore((s) => s.settings);
+  const providers = useStore((s) => s.providers);
   const updateAgent = useStore((s) => s.updateAgent);
   const deleteAgent = useStore((s) => s.deleteAgent);
   const setEditingAgentId = useStore((s) => s.setEditingAgentId);
@@ -53,18 +26,30 @@ function EditorBody({ agentId }: { agentId: string }) {
   const showToast = useStore((s) => s.showToast);
 
   const agent = agents.find((a) => a.id === agentId);
-  const providers = useStore((s) => s.providers);
   const [form, setForm] = useState<Agent>(agent ? { ...agent } : ({} as Agent));
   const [suggText, setSuggText] = useState((agent?.suggestions ?? []).join("\n"));
   const [showEmoji, setShowEmoji] = useState(false);
-  const [showIdeas, setShowIdeas] = useState(false);
 
   if (!agent) return null;
+  const isNew = agent.name === "新智能体" && !agent.persona;
   const set = (patch: Partial<Agent>) => setForm((f) => ({ ...f, ...patch }));
 
+  const applyPreset = (p: (typeof AGENT_PRESETS)[number]) => {
+    set({
+      name: p.name,
+      emoji: p.emoji,
+      hue: p.hue,
+      persona: p.persona,
+      greeting: p.greeting,
+      suggestions: p.suggestions,
+    });
+    setSuggText(p.suggestions.join("\n"));
+    showToast(`已套用「${p.name}」模板，可继续修改`, "success");
+  };
+
   const save = async () => {
-    if (!form.name?.trim()) {
-      showToast("先给伙伴起个名字吧", "error");
+    if (!form.name?.trim() || form.name === "新智能体") {
+      showToast("先给智能体起个名字吧", "error");
       return;
     }
     const suggestions = suggText
@@ -80,11 +65,7 @@ function EditorBody({ agentId }: { agentId: string }) {
   const chatModels = models.filter((m) => m.roles.includes("chat"));
   const visionModels = models.filter((m) => m.roles.includes("vision"));
   const embedModels = models.filter((m) => m.roles.includes("embedding"));
-  const modelSelect = (
-    label: string,
-    role: "chat" | "vision" | "embedding",
-    options: typeof chatModels
-  ) => (
+  const modelSelect = (label: string, role: "chat" | "vision" | "embedding", options: typeof chatModels) => (
     <div className="field">
       <label>{label}</label>
       <select
@@ -104,7 +85,7 @@ function EditorBody({ agentId }: { agentId: string }) {
 
   return (
     <Modal
-      title="伙伴设定"
+      title="智能体设定"
       onClose={() => setEditingAgentId(null)}
       footer={
         <>
@@ -133,6 +114,29 @@ function EditorBody({ agentId }: { agentId: string }) {
         </>
       }
     >
+      {isNew && (
+        <div className="field">
+          <label>从模板开始（点一下即可套用，还能继续改）</label>
+          <div className="chips">
+            {AGENT_PRESETS.map((p) => (
+              <button key={p.name} className="chip" onClick={() => applyPreset(p)}>
+                {p.emoji} {p.name}
+              </button>
+            ))}
+            <button
+              className="chip"
+              onClick={() => {
+                set({ name: "", persona: "", greeting: "" });
+                setSuggText("");
+                showToast("从零开始，自由发挥吧", "success");
+              }}
+            >
+              🎨 从零开始
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* avatar preview + emoji + hue */}
       <div className="row" style={{ alignItems: "center", marginBottom: 16 }}>
         <div
@@ -156,7 +160,7 @@ function EditorBody({ agentId }: { agentId: string }) {
         <div style={{ flex: 1 }}>
           <div className="field" style={{ marginBottom: 8 }}>
             <label>名字</label>
-            <input className="input" value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="伙伴的名字" />
+            <input className="input" value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="智能体的名字" />
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>头像色（点击左侧头像换表情）</label>
@@ -183,31 +187,16 @@ function EditorBody({ agentId }: { agentId: string }) {
       )}
 
       <div className="field">
-        <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          人设（伙伴是谁、怎么说话）
-          <button className="btn sm ghost" onClick={() => setShowIdeas(!showIdeas)}>
-            {showIdeas ? "收起灵感" : "灵感模板"}
-          </button>
-        </label>
+        <label>人设（它是谁、怎么说话）</label>
         <textarea
           className="input"
           rows={5}
           value={form.persona ?? ""}
           onChange={(e) => set({ persona: e.target.value })}
-          placeholder="描述伙伴的性格、说话方式、与你的关系…&#10;例如：你是我的高中同学，性格开朗爱开玩笑，我们都喜欢打篮球…"
+          placeholder="描述智能体的性格、说话方式、与你的关系…&#10;例如：你是我的高中同学，性格开朗爱开玩笑，我们都喜欢打篮球…"
         />
         <div className="desc">留空则使用默认性格：温暖真诚的好朋友</div>
       </div>
-
-      {showIdeas && (
-        <div className="chips" style={{ marginBottom: 14 }}>
-          {PERSONA_IDEAS.map((p) => (
-            <button key={p.name} className="chip" onClick={() => set({ persona: p.text })}>
-              {p.name}
-            </button>
-          ))}
-        </div>
-      )}
 
       <div className="field">
         <label>开场白（新对话的第一句话）</label>

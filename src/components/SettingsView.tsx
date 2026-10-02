@@ -11,20 +11,52 @@ const PROTOCOL_LABELS: Record<Protocol, string> = {
   gemini: "Gemini",
 };
 
-const TEMPLATES: { name: string; protocol: Protocol; baseUrl: string; tip?: string }[] = [
-  { name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com/v1" },
-  { name: "DeepSeek", protocol: "openai", baseUrl: "https://api.deepseek.com/v1" },
-  { name: "硅基流动", protocol: "openai", baseUrl: "https://api.siliconflow.cn/v1" },
-  { name: "Kimi", protocol: "openai", baseUrl: "https://api.moonshot.cn/v1" },
-  { name: "智谱", protocol: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
-  { name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com" },
-  { name: "Gemini", protocol: "gemini", baseUrl: "https://generativelanguage.googleapis.com" },
-  { name: "OpenRouter", protocol: "openai", baseUrl: "https://openrouter.ai/api/v1" },
-  { name: "Ollama 本地", protocol: "openai", baseUrl: "http://localhost:11434/v1" },
+const TEMPLATE_GROUPS: { label: string; items: { name: string; protocol: Protocol; baseUrl: string }[] }[] = [
+  {
+    label: "热门",
+    items: [
+      { name: "DeepSeek", protocol: "openai", baseUrl: "https://api.deepseek.com/v1" },
+      { name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com/v1" },
+      { name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com" },
+      { name: "Gemini", protocol: "gemini", baseUrl: "https://generativelanguage.googleapis.com" },
+      { name: "MiniMax", protocol: "openai", baseUrl: "https://api.minimax.chat/v1" },
+      { name: "硅基流动", protocol: "openai", baseUrl: "https://api.siliconflow.cn/v1" },
+      { name: "Kimi", protocol: "openai", baseUrl: "https://api.moonshot.cn/v1" },
+      { name: "智谱", protocol: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
+    ],
+  },
+  {
+    label: "更多国内",
+    items: [
+      { name: "通义千问", protocol: "openai", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+      { name: "腾讯混元", protocol: "openai", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1" },
+      { name: "讯飞星火", protocol: "openai", baseUrl: "https://spark-api-open.xf-yun.com/v1" },
+      { name: "百川", protocol: "openai", baseUrl: "https://api.baichuan-ai.com/v1" },
+      { name: "零一万物", protocol: "openai", baseUrl: "https://api.lingyiwanwu.com/v1" },
+    ],
+  },
+  {
+    label: "国际",
+    items: [
+      { name: "OpenRouter", protocol: "openai", baseUrl: "https://openrouter.ai/api/v1" },
+      { name: "Groq", protocol: "openai", baseUrl: "https://api.groq.com/openai/v1" },
+      { name: "xAI Grok", protocol: "openai", baseUrl: "https://api.x.ai/v1" },
+      { name: "Together", protocol: "openai", baseUrl: "https://api.together.xyz/v1" },
+      { name: "DeepInfra", protocol: "openai", baseUrl: "https://api.deepinfra.com/v1/openai" },
+      { name: "Cerebras", protocol: "openai", baseUrl: "https://api.cerebras.ai/v1" },
+    ],
+  },
+  {
+    label: "本地",
+    items: [
+      { name: "Ollama", protocol: "openai", baseUrl: "http://localhost:11434/v1" },
+      { name: "LM Studio", protocol: "openai", baseUrl: "http://localhost:1234/v1" },
+    ],
+  },
 ];
 
 const ROLE_ROWS: { role: ModelRole; label: string; desc: string }[] = [
-  { role: "chat", label: "对话模型", desc: "伙伴的大脑，负责聊天与记忆整理" },
+  { role: "chat", label: "对话模型", desc: "智能体的大脑，负责聊天与记忆整理" },
   { role: "vision", label: "看图模型", desc: "理解你发来的图片" },
   { role: "embedding", label: "记忆检索模型", desc: "让回忆找得更准（可选，不填也能用）" },
   { role: "tts", label: "语音朗读模型", desc: "把回复读给你听（可选）" },
@@ -219,13 +251,18 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
       {!provider && (
         <div className="field">
           <label>快速选择服务商</label>
-          <div className="chips">
-            {TEMPLATES.map((t) => (
-              <button key={t.name} className={`chip ${baseUrl === t.baseUrl ? "on" : ""}`} onClick={() => applyTemplate(t)}>
-                {t.name}
-              </button>
-            ))}
-          </div>
+          {TEMPLATE_GROUPS.map((group) => (
+            <div key={group.label} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--text-3)", margin: "4px 0" }}>{group.label}</div>
+              <div className="chips">
+                {group.items.map((t) => (
+                  <button key={t.name} className={`chip ${baseUrl === t.baseUrl ? "on" : ""}`} onClick={() => applyTemplate(t)}>
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -500,7 +537,7 @@ function ProfileCard() {
     <div className="card">
       <h3>
         <Icon name="user" size={16} /> 关于你
-        <span className="hint">所有伙伴都会记得这些</span>
+        <span className="hint">所有智能体都会记得这些</span>
       </h3>
       <div className="field">
         <label>怎么称呼你</label>
@@ -513,7 +550,7 @@ function ProfileCard() {
           rows={3}
           value={settings.userProfile}
           onChange={(e) => setSettings({ userProfile: e.target.value })}
-          placeholder="比如你的职业、兴趣、正在忙的事…伙伴会把它当作对你的初始了解"
+          placeholder="比如你的职业、兴趣、正在忙的事…智能体会把它当作对你的初始了解"
         />
       </div>
     </div>

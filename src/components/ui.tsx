@@ -85,6 +85,12 @@ const paths: Record<string, ReactNode> = {
   check: P("M4.5 12.5 10 18 19.5 6.5"),
   menu: P("M4 7h16M4 12h16M4 17h16"),
   down: P("M6 9l6 6 6-6"),
+  search: (
+    <>
+      {P("M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z")}
+      {P("m16 16 5 5", "b")}
+    </>
+  ),
   user: (
     <>
       {P("M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z")}

@@ -6,6 +6,7 @@ import AgentsView from "./components/AgentsView";
 import MemoryView from "./components/MemoryView";
 import SettingsView from "./components/SettingsView";
 import AgentEditor from "./components/AgentEditor";
+import TitleBar from "./components/TitleBar";
 import { Icon, type IconName } from "./components/ui";
 
 export default function App() {
@@ -39,18 +40,21 @@ export default function App() {
   }
 
   return (
-    <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`}>
-      <Sidebar />
-      {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
-      <main className="main" data-wallpaper={settings.wallpaper}>
-        {view === "chat" && <ChatView />}
-        {view === "agents" && <AgentsView />}
-        {view === "memory" && <MemoryView />}
-        {view === "settings" && <SettingsView />}
-      </main>
-      <AgentEditor />
-      {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
-      <TabBar />
+    <div className="app-root">
+      <TitleBar />
+      <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`}>
+        <Sidebar />
+        {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
+        <main className="main" data-wallpaper={settings.wallpaper} key={view}>
+          {view === "chat" && <ChatView />}
+          {view === "agents" && <AgentsView />}
+          {view === "memory" && <MemoryView />}
+          {view === "settings" && <SettingsView />}
+        </main>
+        <AgentEditor />
+        {toast && <div className={`toast ${toast.kind}`}>{toast.text}</div>}
+        <TabBar />
+      </div>
     </div>
   );
 }
@@ -60,7 +64,7 @@ export default function App() {
 // ----------------------------------------------------------------
 const TABS: { view: string; icon: IconName; label: string }[] = [
   { view: "chat", icon: "chat", label: "聊天" },
-  { view: "agents", icon: "agents", label: "伙伴" },
+  { view: "agents", icon: "agents", label: "智能体" },
   { view: "memory", icon: "memory", label: "记忆" },
   { view: "settings", icon: "settings", label: "设置" },
 ];
@@ -106,7 +110,7 @@ function Onboarding() {
             <img className="logo" src="logo.png" alt="Myosotis" />
             <h1>Myosotis</h1>
             <div className="sub">
-              一朵永不忘记你的 AI 伙伴。
+              一朵永不忘记你的 AI 朋友。
               <br />
               它记得你说过的一切，而这一切只保存在你自己的设备上。
             </div>
@@ -121,8 +125,8 @@ function Onboarding() {
               <div className="step">
                 <div className="n">2</div>
                 <div>
-                  <div className="t">挑选你的伙伴</div>
-                  <div className="d">内置多种性格，也可以自由创建专属人设</div>
+                  <div className="t">创建你的智能体</div>
+                  <div className="d">从模板开始或从零设定性格，人设完全自定义</div>
                 </div>
               </div>
               <div className="step">

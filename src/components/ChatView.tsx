@@ -1,9 +1,25 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, Fragment } from "react";
 import { useStore } from "../store";
 import { resolveModel } from "../lib/utils";
 import { Avatar, Icon } from "./ui";
 import MessageBubble from "./MessageBubble";
 import Composer from "./Composer";
+
+function isSameDay(a: number, b: number): boolean {
+  const da = new Date(a),
+    db = new Date(b);
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
+}
+
+function dateLabel(ts: number): string {
+  const d = new Date(ts);
+  const today = new Date();
+  if (isSameDay(ts, today.getTime())) return "今天";
+  const yesterday = new Date(today.getTime() - 86400000);
+  if (isSameDay(ts, yesterday.getTime())) return "昨天";
+  const sameYear = d.getFullYear() === today.getFullYear();
+  return d.toLocaleDateString("zh-CN", sameYear ? { month: "long", day: "numeric" } : { year: "numeric", month: "long", day: "numeric" });
+}
 
 export default function ChatView() {
   const convos = useStore((s) => s.convos);
@@ -41,13 +57,23 @@ export default function ChatView() {
   };
 
   if (!convo || !agent) {
+    const noAgents = agents.length === 0;
     return (
       <div className="empty-chat">
         <div className="big">🌸</div>
-        <div className="t">选择一位伙伴，开始聊天</div>
-        <div style={{ fontSize: 13 }}>
-          {window.innerWidth <= 768 ? "点击底部「聊天」标签选择伙伴" : "从左侧「伙伴」列表中选择"}
+        <div className="t">{noAgents ? "还没有智能体" : "选择一个对话，开始聊天"}</div>
+        <div style={{ fontSize: 13, marginBottom: 18 }}>
+          {noAgents
+            ? "先创建一个属于你的智能体吧"
+            : window.innerWidth <= 768
+              ? "点击底部「聊天」标签查看对话"
+              : "从左侧列表中选择"}
         </div>
+        {noAgents && (
+          <button className="btn primary" onClick={() => useStore.getState().createAgent()}>
+            创建智能体
+          </button>
+        )}
       </div>
     );
   }
@@ -76,15 +102,22 @@ export default function ChatView() {
         <button className="icon-btn" title="新对话" onClick={() => newConversation(agent.id)}>
           <Icon name="plus" />
         </button>
-        <button className="icon-btn" title="伙伴设定" onClick={() => setEditing(agent.id)}>
+        <button className="icon-btn" title="智能体设定" onClick={() => setEditing(agent.id)}>
           <Icon name="edit" />
         </button>
       </header>
       <div className="chat-scroll" onScroll={onScroll} ref={scrollRef}>
         <div className="msg-list">
-          {messages.map((m, i) => (
-            <MessageBubble key={m.id} msg={m} agent={agent} isLast={i === messages.length - 1} />
-          ))}
+          {messages.map((m, i) => {
+            const prev = messages[i - 1];
+            const showDate = !prev || !isSameDay(prev.createdAt, m.createdAt);
+            return (
+              <Fragment key={m.id}>
+                {showDate && <div className="date-chip">{dateLabel(m.createdAt)}</div>}
+                <MessageBubble msg={m} agent={agent} isLast={i === messages.length - 1} />
+              </Fragment>
+            );
+          })}
           {isStreamingHere && (
             <MessageBubble
               msg={{

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useStore } from "../store";
 import { Avatar, Icon } from "./ui";
 import { formatTime } from "../lib/utils";
@@ -13,8 +14,20 @@ export default function Sidebar() {
   const newConversation = useStore((s) => s.newConversation);
   const deleteConversation = useStore((s) => s.deleteConversation);
   const settings = useStore((s) => s.settings);
+  const [search, setSearch] = useState("");
 
   const agentOf = (id: string) => agents.find((a) => a.id === id);
+  const q = search.trim().toLowerCase();
+  const filteredConvos = q
+    ? convos.filter((c) => {
+        const agent = agentOf(c.agentId);
+        return (
+          c.title.toLowerCase().includes(q) ||
+          c.lastMessage.toLowerCase().includes(q) ||
+          (agent?.name.toLowerCase().includes(q) ?? false)
+        );
+      })
+    : convos;
 
   return (
     <aside className="sidebar">
@@ -30,7 +43,7 @@ export default function Sidebar() {
           </button>
           <button className={`nav-item ${view === "agents" ? "active" : ""}`} onClick={() => setView("agents")}>
             <Icon name="agents" />
-            伙伴
+            智能体
           </button>
           <button className={`nav-item ${view === "memory" ? "active" : ""}`} onClick={() => setView("memory")}>
             <Icon name="memory" />
@@ -44,10 +57,19 @@ export default function Sidebar() {
       </div>
 
       <div className="convo-scroll">
+        <div className="search-box">
+          <Icon name="search" size={15} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索对话…" />
+        </div>
         {convos.length > 0 && (
           <>
-            <div className="section-label">最近对话</div>
-            {convos.map((c) => {
+            <div className="section-label">最近对话{q && `（${filteredConvos.length}/${convos.length}）`}</div>
+            {q && filteredConvos.length === 0 && (
+              <div style={{ textAlign: "center", color: "var(--text-3)", fontSize: 12, padding: "14px 0" }}>
+                没有匹配的对话
+              </div>
+            )}
+            {filteredConvos.map((c) => {
               const agent = agentOf(c.agentId);
               if (!agent) return null;
               return (
@@ -81,20 +103,27 @@ export default function Sidebar() {
         )}
 
         <div className="section-label">
-          伙伴
+          智能体
           <button onClick={() => setView("agents")}>管理</button>
         </div>
-        {agents.map((a) => (
-          <div key={a.id} className="convo-item" onClick={() => newConversation(a.id)} title={`和 ${a.name} 开始新对话`}>
-            <Avatar agent={a} />
-            <div className="meta">
-              <div className="t">
-                <span className="name">{a.name}</span>
-              </div>
-              <div className="preview">{a.greeting.slice(0, 26) || "…"}</div>
-            </div>
+        {agents.length === 0 ? (
+          <div className="agent-empty-hint" onClick={() => setView("agents")}>
+            <span>还没有智能体</span>
+            <b>去创建 →</b>
           </div>
-        ))}
+        ) : (
+          agents.map((a) => (
+            <div key={a.id} className="convo-item" onClick={() => newConversation(a.id)} title={`和 ${a.name} 开始新对话`}>
+              <Avatar agent={a} />
+              <div className="meta">
+                <div className="t">
+                  <span className="name">{a.name}</span>
+                </div>
+                <div className="preview">{a.greeting.slice(0, 26) || "…"}</div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       <div className="sidebar-foot">

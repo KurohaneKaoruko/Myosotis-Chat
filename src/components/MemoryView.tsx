@@ -31,14 +31,14 @@ export default function MemoryView() {
         <div className="page-title">
           记忆花园
           <span className="desc" style={{ fontWeight: 400 }}>
-            伙伴们记住的一切，尽收眼底
+            智能体们记住的一切，尽收眼底
           </span>
         </div>
 
         <div className="card" style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <div style={{ fontSize: 28 }}>🌸</div>
           <div style={{ fontSize: 13, color: "var(--text-2)", flex: 1 }}>
-            伙伴会自动从对话中记住你的喜好、经历与约定。每条记忆都可以修改、置顶或删除——<b>你对自己的信息拥有完全的控制权</b>。
+            智能体会自动从对话中记住你的喜好、经历与约定。每条记忆都可以修改、置顶或删除——<b>你对自己的信息拥有完全的控制权</b>。
             配置「记忆检索模型」后，回忆会找得更准。
           </div>
           <button className="btn primary sm" onClick={() => setEditing("new")}>
@@ -62,7 +62,7 @@ export default function MemoryView() {
         {list.length === 0 ? (
           <div className="mem-empty">
             <div style={{ fontSize: 40, marginBottom: 8 }}>🌱</div>
-            还没有记忆。多和伙伴聊聊，或手动种下一颗种子。
+            还没有记忆。多和你的智能体聊聊，或手动种下一颗种子。
           </div>
         ) : (
           list.map((m) => {
@@ -94,7 +94,7 @@ export default function MemoryView() {
                     className="icon-btn danger"
                     title="忘记"
                     onClick={() => {
-                      if (confirm("让伙伴忘掉这条记忆？")) useStore.getState().deleteMemory(m.id).then(load);
+                      if (confirm("让智能体忘掉这条记忆？")) useStore.getState().deleteMemory(m.id).then(load);
                     }}
                   >
                     <Icon name="trash" size={15} />
@@ -174,7 +174,7 @@ function MemoryEditor({
         />
       </div>
       <div className="field">
-        <label>属于哪位伙伴</label>
+        <label>属于哪个智能体</label>
         <select className="select input" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
           {agents.map((a) => (
             <option key={a.id} value={a.id}>
