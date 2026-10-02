@@ -48,10 +48,18 @@ interface AppState {
   streamingConvoId: string | null;
   streamText: string;
   memoryAgentFilter: string | null;
+  confirmOptions: { title: string; message: string; confirmText?: string; danger?: boolean } | null;
+  replyTo: { role: "user" | "assistant"; content: string } | null;
+  pendingImages: string[];
 
   // ----- lifecycle -----
   init: () => Promise<void>;
   showToast: (text: string, kind?: Toast["kind"]) => void;
+  askConfirm: (opts: { title: string; message: string; confirmText?: string; danger?: boolean }) => Promise<boolean>;
+  resolveConfirm: (ok: boolean) => void;
+  setReplyTo: (r: { role: "user" | "assistant"; content: string } | null) => void;
+  addPendingImages: (urls: string[]) => void;
+  consumePendingImages: () => void;
   setSettings: (patch: Partial<Settings>) => void;
   setView: (v: View) => void;
   setSidebar: (open: boolean) => void;
@@ -81,7 +89,7 @@ interface AppState {
   exportConversation: (id: string) => Promise<void>;
 
   // ----- messaging -----
-  send: (text: string, images?: string[]) => Promise<void>;
+  send: (text: string, images?: string[], replyTo?: { role: "user" | "assistant"; content: string }) => Promise<void>;
   stop: () => void;
   regenerate: () => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
@@ -100,6 +108,7 @@ interface AppState {
 const abortRef: { current: AbortController | null } = { current: null };
 const extractCounter: Record<string, number> = {}; // convoId -> user turns since last extraction
 let initStarted = false; // React StrictMode double-invokes effects
+let confirmResolver: ((ok: boolean) => void) | null = null;
 
 function guessRoles(name: string): ModelRole[] {
   const n = name.toLowerCase();
@@ -129,6 +138,9 @@ export const useStore = create<AppState>()(
       streamingConvoId: null,
       streamText: "",
       memoryAgentFilter: null,
+      confirmOptions: null,
+      replyTo: null,
+      pendingImages: [],
 
       // -------------------------------------------------------
       async init() {
@@ -164,6 +176,27 @@ export const useStore = create<AppState>()(
         if (kind === "error") toast.error(text);
         else if (kind === "success") toast.success(text);
         else toast(text);
+      },
+
+      askConfirm(opts) {
+        set({ confirmOptions: opts });
+        return new Promise<boolean>((res) => {
+          confirmResolver = res;
+        });
+      },
+      resolveConfirm(ok) {
+        confirmResolver?.(ok);
+        confirmResolver = null;
+        set({ confirmOptions: null });
+      },
+      setReplyTo(r) {
+        set({ replyTo: r });
+      },
+      addPendingImages(urls) {
+        set((s) => ({ pendingImages: [...s.pendingImages, ...urls].slice(0, 4) }));
+      },
+      consumePendingImages() {
+        set({ pendingImages: [] });
       },
 
       setSettings(patch) {
@@ -404,7 +437,7 @@ export const useStore = create<AppState>()(
       },
 
       // -------------------------------------------------------
-      async send(text, images) {
+      async send(text, images, replyTo) {
         const { activeConvoId } = get();
         if (!activeConvoId) return;
         if (get().streamingConvoId) return;
@@ -422,6 +455,7 @@ export const useStore = create<AppState>()(
           role: "user",
           content: trimmed,
           images: images?.length ? images : undefined,
+          replyTo: replyTo ?? undefined,
           createdAt: now(),
           status: "ok",
         };
@@ -467,10 +501,12 @@ export const useStore = create<AppState>()(
 
         let full = "";
         let finalStatus: ChatMessage["status"] = "ok";
+        const gen = settings.genParams ?? { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
         try {
           full = await chatComplete(rm, context, {
             signal: controller.signal,
-            temperature: 0.8,
+            temperature: gen.temperature,
+            maxTokens: gen.maxTokens,
             onDelta: (d) => set((s) => ({ streamText: s.streamText + d })),
           });
         } catch (e: any) {
@@ -483,6 +519,7 @@ export const useStore = create<AppState>()(
           }
         } finally {
           abortRef.current = null;
+          if (replyTo) set({ replyTo: null });
         }
 
         if (!full.trim() && finalStatus === "error") {

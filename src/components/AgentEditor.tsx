@@ -89,9 +89,15 @@ function EditorBody({ agentId }: { agentId: string }) {
           <button
             className="btn danger"
             onClick={() => {
-              if (confirm(`确定删除「${agent.name}」？其对话与记忆也会一并删除。`)) {
-                deleteAgent(agent.id);
-              }
+              useStore
+                .getState()
+                .askConfirm({
+                  title: "删除智能体",
+                  message: `确定删除「${agent.name}」？\n其全部对话与记忆也会一并删除，此操作不可恢复。`,
+                  confirmText: "删除",
+                  danger: true,
+                })
+                .then((ok) => ok && deleteAgent(agent.id));
             }}
           >
             删除

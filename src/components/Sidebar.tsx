@@ -103,7 +103,15 @@ export default function Sidebar() {
                           icon: "trash",
                           danger: true,
                           onClick: () => {
-                            if (confirm(`删除与「${agent.name}」的这段对话？（记忆不受影响）`)) deleteConversation(c.id);
+                            useStore
+                              .getState()
+                              .askConfirm({
+                                title: "删除对话",
+                                message: `删除与「${agent.name}」的这段对话？\n智能体的长期记忆不受影响。`,
+                                confirmText: "删除",
+                                danger: true,
+                              })
+                              .then((ok) => ok && deleteConversation(c.id));
                           },
                         },
                       ]}

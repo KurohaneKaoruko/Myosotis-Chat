@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { listRemoteModels } from "../lib/api";
 import { friendlyError } from "../lib/utils";
-import { Modal, Icon, SelectBox, Toggle } from "./ui";
+import { Modal, Icon, SelectBox, Toggle, SliderRow } from "./ui";
 import type { ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
 
 const PROTOCOL_LABELS: Record<Protocol, string> = {
@@ -84,6 +84,7 @@ export default function SettingsView() {
         </div>
         <ProvidersCard />
         <DefaultModelsCard />
+        <GenParamsCard />
         <AppearanceCard />
         <VoiceCard />
         <ProfileCard />
@@ -140,7 +141,15 @@ function ProvidersCard() {
               className="icon-btn danger"
               title="删除"
               onClick={() => {
-                if (confirm(`删除「${p.name}」及其下所有模型配置？`)) removeProvider(p.id);
+                useStore
+                  .getState()
+                  .askConfirm({
+                    title: "删除服务商",
+                    message: `删除「${p.name}」及其下所有模型配置？`,
+                    confirmText: "删除",
+                    danger: true,
+                  })
+                  .then((ok) => ok && removeProvider(p.id));
               }}
             >
               <Icon name="trash" size={17} />
@@ -493,7 +502,7 @@ function AppearanceCard() {
 }
 
 // ================================================================
-// Voice
+// Voice & generation
 // ================================================================
 function VoiceCard() {
   const settings = useStore((s) => s.settings);
@@ -516,6 +525,66 @@ function VoiceCard() {
           <div className="d">按住麦克风说话变文字；部分浏览器不支持时自动改用云端</div>
         </div>
         <Toggle checked={settings.browserStt} onChange={(v) => setSettings({ browserStt: v })} />
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
+// Generation parameters (LLM tuning)
+// ================================================================
+function GenParamsCard() {
+  const settings = useStore((s) => s.settings);
+  const setSettings = useStore((s) => s.setSettings);
+  const gen = settings.genParams ?? { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
+  return (
+    <div className="card">
+      <h3>
+        <Icon name="refresh" size={16} /> 生成参数
+        <span className="hint">对聊天与记忆整理生效</span>
+      </h3>
+      <SliderRow
+        label="温度"
+        desc="越高越有创造力，越低越严谨稳定"
+        value={gen.temperature}
+        min={0}
+        max={2}
+        step={0.1}
+        format={(v) => v.toFixed(1)}
+        onChange={(v) => setSettings({ genParams: { ...gen, temperature: v } })}
+      />
+      <SliderRow
+        label="回复长度上限"
+        desc="单次回复的最大 Token 数"
+        value={gen.maxTokens}
+        min={512}
+        max={16384}
+        step={512}
+        format={(v) => `${v}`}
+        onChange={(v) => setSettings({ genParams: { ...gen, maxTokens: v } })}
+      />
+      <SliderRow
+        label="上下文轮数"
+        desc="逐字携带的最近对话轮数，越大越连贯、消耗越多"
+        value={gen.contextTurns}
+        min={4}
+        max={30}
+        step={1}
+        format={(v) => `${v} 轮`}
+        onChange={(v) => setSettings({ genParams: { ...gen, contextTurns: v } })}
+      />
+      <div className="set-row" style={{ borderBottom: "none" }}>
+        <div className="info">
+          <div className="t">消息字号</div>
+          <div className="d">聊天气泡的文字大小</div>
+        </div>
+        <div className="chips">
+          {[14, 15, 16].map((n) => (
+            <button key={n} className={`chip ${settings.fontSize === n ? "on" : ""}`} onClick={() => setSettings({ fontSize: n })}>
+              {n === 14 ? "小" : n === 15 ? "中" : "大"}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -584,7 +653,17 @@ function DataCard() {
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f && confirm("导入将覆盖当前所有数据，确定继续？")) restore(f);
+              if (f) {
+                useStore
+                  .getState()
+                  .askConfirm({
+                    title: "导入备份",
+                    message: "导入将覆盖当前所有数据（对话、智能体、记忆、设置），确定继续？",
+                    confirmText: "覆盖导入",
+                    danger: true,
+                  })
+                  .then((ok) => ok && restore(f));
+              }
               e.target.value = "";
             }}
           />

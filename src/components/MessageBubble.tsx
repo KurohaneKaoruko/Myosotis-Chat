@@ -28,6 +28,7 @@ export default function MessageBubble({
   const regenerate = useStore((s) => s.regenerate);
   const deleteMessage = useStore((s) => s.deleteMessage);
   const editAndResend = useStore((s) => s.editAndResend);
+  const setReplyTo = useStore((s) => s.setReplyTo);
   const showToast = useStore((s) => s.showToast);
   const isUser = msg.role === "user";
   const text = streaming ?? msg.content;
@@ -91,6 +92,15 @@ export default function MessageBubble({
           </div>
         )}
         <div className={`bubble ${!isUser && !streaming ? "md" : ""}`}>
+          {msg.replyTo && !editing && (
+            <div className="reply-quote">
+              <Icon name="chat" size={12} />
+              <span>
+                {msg.replyTo.role === "user" ? "自己" : "AI"}：{msg.replyTo.content.slice(0, 80)}
+                {msg.replyTo.content.length > 80 ? "…" : ""}
+              </span>
+            </div>
+          )}
           {editing ? (
             <div className="edit-box">
               <textarea
@@ -140,11 +150,22 @@ export default function MessageBubble({
                 <Icon name="speaker" size={12} /> {speaking ? "停止" : "朗读"}
               </button>
             )}
+            {!isUser && isLast && msg.status === "error" && (
+              <button onClick={() => regenerate()} title="重试">
+                <Icon name="refresh" size={12} /> 重试
+              </button>
+            )}
             {!isUser && isLast && msg.status !== "error" && (
               <button onClick={() => regenerate()} title="重新生成">
                 <Icon name="refresh" size={12} /> 重写
               </button>
             )}
+            <button
+              title="引用回复"
+              onClick={() => setReplyTo({ role: msg.role, content: msg.content })}
+            >
+              <Icon name="chat" size={12} /> 引用
+            </button>
             {isUser && (
               <button
                 title="编辑后重新发送"
@@ -159,7 +180,10 @@ export default function MessageBubble({
             <button
               title="删除这条消息"
               onClick={() => {
-                if (confirm("删除这条消息？")) deleteMessage(msg.id);
+                useStore
+                  .getState()
+                  .askConfirm({ title: "删除消息", message: "删除这条消息？", confirmText: "删除", danger: true })
+                  .then((ok) => ok && deleteMessage(msg.id));
               }}
             >
               <Icon name="trash" size={12} /> 删除

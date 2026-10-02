@@ -141,10 +141,13 @@ export async function buildContextMessages(
 
   const system = buildSystemPrompt(agent, convo, settings, memories);
 
-  const historyWindow = recentMessages.slice(-30);
+  const gen = settings.genParams ?? { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
+  const historyWindow = recentMessages.slice(-Math.max(4, gen.contextTurns * 2));
   const apiMsgs: ApiMessage[] = historyWindow.map((m) => ({
     role: m.role,
-    text: m.content,
+    text: m.replyTo
+      ? `[引用${m.replyTo.role === "user" ? "用户" : "你"}之前说的]「${m.replyTo.content.slice(0, 150)}」\n\n${m.content}`
+      : m.content,
     images: m.role === "user" ? m.images : undefined,
   }));
 

@@ -40,6 +40,12 @@ export interface Settings {
     tts: string | null;
     stt: string | null;
   };
+  genParams: {
+    temperature: number; // 0 ~ 2
+    maxTokens: number; // response cap
+    contextTurns: number; // recent turns sent verbatim
+  };
+  fontSize: number; // message bubble font size
   browserTts: boolean;
   browserStt: boolean;
   sendOnEnter: boolean;
@@ -79,6 +85,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   images?: string[]; // data urls
+  replyTo?: { role: "user" | "assistant"; content: string }; // quoted message
   createdAt: number;
   status?: "ok" | "error" | "aborted";
 }
@@ -111,6 +118,8 @@ export const DEFAULT_SETTINGS: Settings = {
   userName: "",
   userProfile: "",
   defaults: { chat: null, vision: null, embedding: null, tts: null, stt: null },
+  genParams: { temperature: 0.8, maxTokens: 4096, contextTurns: 12 },
+  fontSize: 15,
   browserTts: true,
   browserStt: true,
   sendOnEnter: true,

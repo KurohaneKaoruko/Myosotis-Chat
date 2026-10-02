@@ -9,7 +9,7 @@ import MemoryView from "./components/MemoryView";
 import SettingsView from "./components/SettingsView";
 import AgentEditor from "./components/AgentEditor";
 import TitleBar from "./components/TitleBar";
-import { Icon, Tip, TipFor, type IconName } from "./components/ui";
+import { ConfirmHost, Icon, Tip, TipFor, type IconName } from "./components/ui";
 
 export default function App() {
   const ready = useStore((s) => s.ready);
@@ -26,6 +26,27 @@ export default function App() {
   useEffect(() => {
     applyTheme(settings);
   }, [settings.themeId, settings.themeMode, settings]);
+
+  // message font size as CSS var
+  useEffect(() => {
+    document.documentElement.style.setProperty("--msg-font", (settings.fontSize ?? 15) + "px");
+  }, [settings.fontSize]);
+
+  // global shortcuts: Ctrl/Cmd+K focuses search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        useStore.getState().setView("chat");
+        useStore.getState().setSidebar(true);
+        requestAnimationFrame(() => {
+          document.querySelector<HTMLInputElement>(".search-box input")?.focus();
+        });
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const dark =
     settings.themeMode === "dark" ||
@@ -60,6 +81,7 @@ export default function App() {
           </main>
           <AgentEditor />
           <TabBar />
+          <ConfirmHostBridge />
         </div>
         <Toaster
           position="top-center"
@@ -78,6 +100,15 @@ export default function App() {
       </div>
     </Tip.Provider>
   );
+}
+
+// ----------------------------------------------------------------
+// Confirm dialog host (driven by store.askConfirm)
+// ----------------------------------------------------------------
+function ConfirmHostBridge() {
+  const options = useStore((s) => s.confirmOptions);
+  const resolve = useStore((s) => s.resolveConfirm);
+  return <ConfirmHost options={options} onResolve={resolve} />;
 }
 
 // ----------------------------------------------------------------

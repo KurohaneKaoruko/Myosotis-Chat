@@ -4,6 +4,7 @@ import * as Select from "@radix-ui/react-select";
 import * as Switch from "@radix-ui/react-switch";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
+import * as Slider from "@radix-ui/react-slider";
 import type { Agent } from "../types";
 
 // ============================================================
@@ -240,6 +241,88 @@ export function PromptModal({
           onKeyDown={(e) => { if (e.key === "Enter") onConfirm((e.target as HTMLInputElement).value); }} />
       </div>
     </Modal>
+  );
+}
+
+// styled replacement for window.confirm — host mounts once, store drives it
+export function ConfirmHost({
+  options,
+  onResolve,
+}: {
+  options: { title: string; message: string; confirmText?: string; danger?: boolean } | null;
+  onResolve: (ok: boolean) => void;
+}) {
+  if (!options) return null;
+  return (
+    <Dialog.Root open onOpenChange={(o) => !o && onResolve(false)}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="modal-mask" />
+        <Dialog.Content className="modal confirm-modal" onInteractOutside={(e) => e.preventDefault()}>
+          <Dialog.Title style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{options.title}</Dialog.Title>
+          <Dialog.Description style={{ fontSize: 13.5, color: "var(--text-2)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+            {options.message}
+          </Dialog.Description>
+          <div className="modal-foot">
+            <button className="btn ghost" onClick={() => onResolve(false)}>
+              取消
+            </button>
+            <button
+              className={`btn ${options.danger ? "danger confirm-danger" : "primary"}`}
+              autoFocus
+              onClick={() => onResolve(true)}
+            >
+              {options.confirmText ?? "确定"}
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+// slider (Radix) with label
+export function SliderRow({
+  label,
+  desc,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  desc?: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format?: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="set-row">
+      <div className="info">
+        <div className="t">{label}</div>
+        {desc && <div className="d">{desc}</div>}
+      </div>
+      <div className="slider-cell">
+        <span className="slider-val">{format ? format(value) : value}</span>
+        <Slider.Root
+          className="slider"
+          value={[value]}
+          min={min}
+          max={max}
+          step={step}
+          onValueChange={([v]) => onChange(v)}
+        >
+          <Slider.Track className="slider-track">
+            <Slider.Range className="slider-range" />
+          </Slider.Track>
+          <Slider.Thumb className="slider-thumb" aria-label={label} />
+        </Slider.Root>
+      </div>
+    </div>
   );
 }
 

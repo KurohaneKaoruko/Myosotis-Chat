@@ -93,7 +93,15 @@ export default function MemoryView() {
                     className="icon-btn danger"
                     title="忘记"
                     onClick={() => {
-                      if (confirm("让智能体忘掉这条记忆？")) useStore.getState().deleteMemory(m.id);
+                      useStore
+                        .getState()
+                        .askConfirm({
+                          title: "忘掉这条记忆",
+                          message: `让智能体忘掉：\n「${m.content.slice(0, 60)}」？`,
+                          confirmText: "忘掉",
+                          danger: true,
+                        })
+                        .then((ok) => ok && useStore.getState().deleteMemory(m.id));
                     }}
                   >
                     <Icon name="trash" size={15} />

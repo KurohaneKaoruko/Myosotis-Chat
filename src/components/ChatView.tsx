@@ -1,9 +1,10 @@
-import { useEffect, useRef, Fragment } from "react";
+import { useEffect, useRef, Fragment, useState } from "react";
 import { useStore } from "../store";
 import { resolveModel } from "../lib/utils";
-import { Avatar, Icon, Menu, TipFor } from "./ui";
+import { Avatar, Icon, Menu, Modal, SelectBox, TipFor } from "./ui";
 import MessageBubble from "./MessageBubble";
-import Composer from "./Composer";
+import Composer, { filesToDataUrls } from "./Composer";
+import type { ChatMessage } from "../types";
 
 function isSameDay(a: number, b: number): boolean {
   const da = new Date(a),
@@ -38,9 +39,15 @@ export default function ChatView() {
   const clearConversation = useStore((s) => s.clearConversation);
   const exportConversation = useStore((s) => s.exportConversation);
   const deleteConversation = useStore((s) => s.deleteConversation);
+  const updateAgent = useStore((s) => s.updateAgent);
+  const addPendingImages = useStore((s) => s.addPendingImages);
 
+  const [showSummary, setShowSummary] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [showJump, setShowJump] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
+  const dragCounter = useRef(0);
 
   const convo = convos.find((c) => c.id === activeConvoId);
   const agent = agents.find((a) => a.id === convo?.agentId);
@@ -56,7 +63,26 @@ export default function ChatView() {
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    stickBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    stickBottom.current = nearBottom;
+    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > 420);
+  };
+
+  const jumpToBottom = () => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      stickBottom.current = true;
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    dragCounter.current = 0;
+    const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"));
+    if (!files.length) return;
+    filesToDataUrls(files).then((urls) => urls.length && addPendingImages(urls));
   };
 
   if (!convo || !agent) {
@@ -81,6 +107,9 @@ export default function ChatView() {
     );
   }
 
+  const chatModels = models.filter((m) => m.roles.includes("chat"));
+  const providerName = (id: string) => providers.find((p) => p.id === id)?.name ?? "?";
+
   // greeting suggestions: conversation has only the greeting so far
   const showSuggests =
     messages.length === 1 &&
@@ -97,14 +126,39 @@ export default function ChatView() {
         <Avatar agent={agent} size={38} radius={12} />
         <div>
           <div className="title">{agent.name}</div>
-          <div
-            className="sub"
-            style={{ color: chatRm ? undefined : "#f59e0b", cursor: chatRm ? "default" : "pointer" }}
-            onClick={chatRm ? undefined : () => useStore.getState().setView("settings")}
-            title={chatRm ? undefined : "点击前往设置"}
-          >
-            {chatRm ? chatRm.model.label : "⚠ 未配置模型 · 点击设置"}
-          </div>
+          {chatRm ? (
+            <Menu
+              align="start"
+              trigger={
+                <button className="model-switch" title="切换对话模型">
+                  <span className="sub">{chatRm.model.label}</span>
+                  <Icon name="down" size={11} />
+                </button>
+              }
+              items={[
+                ...chatModels.slice(0, 12).map((m) => ({
+                  label: `${m.label} · ${providerName(m.providerId)}`,
+                  onClick: () =>
+                    updateAgent(agent.id, { models: { ...agent.models, chat: m.id } }),
+                })),
+                ...(chatModels.length > 1
+                  ? ([
+                      "separator",
+                      { label: "在设置中管理模型", icon: "settings" as const, onClick: () => useStore.getState().setView("settings") },
+                    ] as const)
+                  : []),
+              ]}
+            />
+          ) : (
+            <div
+              className="sub"
+              style={{ color: "#f59e0b", cursor: "pointer" }}
+              onClick={() => useStore.getState().setView("settings")}
+              title="点击前往设置"
+            >
+              ⚠ 未配置模型 · 点击设置
+            </div>
+          )}
         </div>
         <div className="spacer" />
         <TipFor text="开始新对话">
@@ -125,17 +179,65 @@ export default function ChatView() {
           }
           items={[
             { label: "导出为 Markdown", icon: "download", onClick: () => exportConversation(convo.id) },
-            { label: "清空对话（保留记忆）", icon: "broom", onClick: () => {
-                if (confirm("清空这段对话的所有消息？智能体的长期记忆不受影响。")) clearConversation(convo.id);
-              } },
+            { label: "查看记忆摘要", icon: "book", onClick: () => setShowSummary(true) },
+            {
+              label: "清空对话（保留记忆）",
+              icon: "broom",
+              onClick: () => {
+                useStore
+                  .getState()
+                  .askConfirm({
+                    title: "清空对话",
+                    message: "清空这段对话的所有消息？\n智能体的长期记忆不受影响，清空后将从开场白重新开始。",
+                    confirmText: "清空",
+                    danger: true,
+                  })
+                  .then((ok) => ok && clearConversation(convo.id));
+              },
+            },
             "separator",
-            { label: "删除对话", icon: "trash", danger: true, onClick: () => {
-                if (confirm(`删除与「${agent.name}」的这段对话？（记忆不受影响）`)) deleteConversation(convo.id);
-              } },
+            {
+              label: "删除对话",
+              icon: "trash",
+              danger: true,
+              onClick: () => {
+                useStore
+                  .getState()
+                  .askConfirm({
+                    title: "删除对话",
+                    message: `删除与「${agent.name}」的这段对话？\n智能体的长期记忆不受影响。`,
+                    confirmText: "删除",
+                    danger: true,
+                  })
+                  .then((ok) => ok && deleteConversation(convo.id));
+              },
+            },
           ]}
         />
       </header>
-      <div className="chat-scroll" onScroll={onScroll} ref={scrollRef}>
+
+      <div
+        className={`chat-scroll ${dragging ? "dragging" : ""}`}
+        ref={scrollRef}
+        onScroll={onScroll}
+        onDragEnter={(e) => {
+          if (Array.from(e.dataTransfer.types).includes("Files")) {
+            dragCounter.current++;
+            setDragging(true);
+          }
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          dragCounter.current--;
+          if (dragCounter.current <= 0) setDragging(false);
+        }}
+        onDrop={onDrop}
+      >
+        {dragging && (
+          <div className="drop-mask">
+            <div className="drop-inner">🖼️ 松开发送图片</div>
+          </div>
+        )}
         <div className="msg-list">
           {messages.map((m, i) => {
             const prev = messages[i - 1];
@@ -149,20 +251,22 @@ export default function ChatView() {
           })}
           {isStreamingHere && (
             <MessageBubble
-              msg={{
-                id: "streaming",
-                conversationId: activeConvoId!,
-                role: "assistant",
-                content: "",
-                createdAt: Date.now(),
-              }}
+              msg={
+                {
+                  id: "streaming",
+                  conversationId: activeConvoId!,
+                  role: "assistant",
+                  content: "",
+                  createdAt: Date.now(),
+                } as ChatMessage
+              }
               agent={agent}
               isLast
               streaming={streamText}
             />
           )}
           {showSuggests && (
-            <div className="suggests" style={{ marginLeft: 44 }}>
+            <div className="suggests" style={{ marginLeft: 47 }}>
               {agent.suggestions.map((s, i) => (
                 <button key={i} className="suggest-chip" onClick={() => send(s)}>
                   {s}
@@ -171,9 +275,28 @@ export default function ChatView() {
             </div>
           )}
         </div>
+        {showJump && !isStreamingHere && (
+          <button className="jump-btn" onClick={jumpToBottom} title="回到底部">
+            <Icon name="down" size={17} />
+          </button>
+        )}
       </div>
 
       <Composer />
+
+      {showSummary && (
+        <Modal title="本对话的记忆摘要" onClose={() => setShowSummary(false)}>
+          <div className="summary-body">
+            {convo.summary.trim() ? (
+              convo.summary
+            ) : (
+              <span style={{ color: "var(--text-3)" }}>
+                暂无摘要。对话进行一段时间后（约 20 轮以上），系统会自动把较早的内容压缩成摘要，作为智能体的记忆。
+              </span>
+            )}
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

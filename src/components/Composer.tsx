@@ -7,7 +7,7 @@ import { resolveModel } from "../lib/utils";
 
 const MAX_IMG_SIDE = 1024;
 
-async function fileToCompressedDataUrl(file: File): Promise<string> {
+export async function fileToCompressedDataUrl(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((res, rej) => {
@@ -27,6 +27,17 @@ async function fileToCompressedDataUrl(file: File): Promise<string> {
   }
 }
 
+export async function filesToDataUrls(files: File[]): Promise<string[]> {
+  const urls: string[] = [];
+  for (const f of files.slice(0, 4)) {
+    if (!f.type.startsWith("image/")) continue;
+    try {
+      urls.push(await fileToCompressedDataUrl(f));
+    } catch {}
+  }
+  return urls;
+}
+
 export default function Composer() {
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -42,6 +53,10 @@ export default function Composer() {
   const settings = useStore((s) => s.settings);
   const models = useStore((s) => s.models);
   const providers = useStore((s) => s.providers);
+  const replyTo = useStore((s) => s.replyTo);
+  const setReplyTo = useStore((s) => s.setReplyTo);
+  const pendingImages = useStore((s) => s.pendingImages);
+  const consumePendingImages = useStore((s) => s.consumePendingImages);
   const send = useStore((s) => s.send);
   const stop = useStore((s) => s.stop);
   const showToast = useStore((s) => s.showToast);
@@ -60,11 +75,19 @@ export default function Composer() {
     }
   }, [text]);
 
+  // images dropped onto the chat area land here
+  useEffect(() => {
+    if (pendingImages.length) {
+      setImages((prev) => [...prev, ...pendingImages].slice(0, 4));
+      consumePendingImages();
+    }
+  }, [pendingImages, consumePendingImages]);
+
   const doSend = () => {
     if (busy || !activeConvoId) return;
     const t = text.trim();
     if (!t && !images.length) return;
-    send(t, images.length ? images : undefined);
+    send(t, images.length ? images : undefined, replyTo ?? undefined);
     setText("");
     setImages([]);
   };
@@ -76,15 +99,17 @@ export default function Composer() {
     }
   };
 
+  const onPaste = async (e: React.ClipboardEvent) => {
+    const files = Array.from(e.clipboardData.files || []).filter((f) => f.type.startsWith("image/"));
+    if (!files.length) return;
+    e.preventDefault();
+    const urls = await filesToDataUrls(files);
+    if (urls.length) setImages((prev) => [...prev, ...urls].slice(0, 4));
+  };
+
   const pickImages = async (files: FileList | null) => {
     if (!files?.length) return;
-    const urls: string[] = [];
-    for (const f of Array.from(files).slice(0, 4)) {
-      if (!f.type.startsWith("image/")) continue;
-      try {
-        urls.push(await fileToCompressedDataUrl(f));
-      } catch {}
-    }
+    const urls = await filesToDataUrls(Array.from(files));
     setImages((prev) => [...prev, ...urls].slice(0, 4));
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -176,6 +201,18 @@ export default function Composer() {
           onChange={(e) => pickImages(e.target.files)}
         />
         <div className="inner">
+          {replyTo && (
+            <div className="reply-bar">
+              <Icon name="chat" size={13} />
+              <span className="reply-text">
+                引用 {replyTo.role === "user" ? "自己" : "AI"}：{replyTo.content.slice(0, 60)}
+                {replyTo.content.length > 60 ? "…" : ""}
+              </span>
+              <button className="reply-x" onClick={() => setReplyTo(null)}>
+                <Icon name="x" size={11} />
+              </button>
+            </div>
+          )}
           {images.length > 0 && (
             <div className="img-previews">
               {images.map((img, i) => (
@@ -191,10 +228,11 @@ export default function Composer() {
           <textarea
             ref={taRef}
             rows={1}
-            placeholder={listening ? "正在听你说…" : "输入消息…"}
+            placeholder={listening ? "正在听你说…" : "输入消息，可粘贴/拖入图片…"}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             disabled={!activeConvoId}
           />
         </div>
