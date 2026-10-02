@@ -88,6 +88,7 @@ interface AppState {
 
 const abortRef: { current: AbortController | null } = { current: null };
 const extractCounter: Record<string, number> = {}; // convoId -> user turns since last extraction
+let initStarted = false; // React StrictMode double-invokes effects
 
 function guessRoles(name: string): ModelRole[] {
   const n = name.toLowerCase();
@@ -121,24 +122,37 @@ export const useStore = create<AppState>()(
 
       // -------------------------------------------------------
       async init() {
-        const [providers, models, agents, convos] = await Promise.all([
-          db.providers.toArray(),
-          db.models.toArray(),
-          db.agents.orderBy("createdAt").toArray(),
-          db.conversations.orderBy("updatedAt").reverse().toArray(),
-        ]);
-        // seed default agent on first launch
-        if (!agents.length) {
-          const preset = AGENT_PRESETS[0];
-          const agent: Agent = { ...preset, id: uid("agt"), createdAt: now(), updatedAt: now() };
-          await db.agents.add(agent);
-          agents.push(agent);
+        if (initStarted) return; // React StrictMode runs effects twice
+        initStarted = true;
+        let providers: Provider[] = [];
+        let models: ModelConfig[] = [];
+        let agents: Agent[] = [];
+        let convos: Conversation[] = [];
+        try {
+          [providers, models, agents, convos] = await Promise.all([
+            db.providers.toArray(),
+            db.models.toArray(),
+            db.agents.orderBy("createdAt").toArray(),
+            db.conversations.orderBy("updatedAt").reverse().toArray(),
+          ]);
+          // seed default agent on first launch
+          if (!agents.length) {
+            const preset = AGENT_PRESETS[0];
+            const agent: Agent = { ...preset, id: uid("agt"), createdAt: now(), updatedAt: now() };
+            await db.agents.add(agent);
+            agents.push(agent);
+          }
+        } catch (e) {
+          console.error("[init] database error:", e);
+          get().showToast("本地数据库读取失败，部分数据可能不可用", "error");
         }
         set({ providers, models, agents, convos, ready: true });
         // restore last conversation
         const last = get().activeConvoId;
         if (last && convos.some((c) => c.id === last)) {
-          await get().openConversation(last);
+          try {
+            await get().openConversation(last);
+          } catch {}
         }
       },
 

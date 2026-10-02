@@ -24,6 +24,10 @@ class MyosotisDB extends Dexie {
       messages: "id, conversationId, createdAt",
       memories: "id, agentId, updatedAt",
     });
+    // v2: add createdAt index to agents (was missing, broke orderBy)
+    this.version(2).stores({
+      agents: "id, createdAt, updatedAt",
+    });
   }
 }
 

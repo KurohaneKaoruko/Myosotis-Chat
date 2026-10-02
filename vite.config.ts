@@ -8,6 +8,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      // rust build output is constantly locked while compiling
+      ignored: ["**/src-tauri/**"],
+    },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {
