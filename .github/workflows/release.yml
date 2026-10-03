@@ -1,0 +1,116 @@
+name: Release
+
+# Push a v* tag to build & publish all platforms automatically.
+# iOS builds are not included: they require Apple signing certificates.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest # builds universal (Intel + Apple Silicon)
+            args: "--target universal-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Linux system deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Myosotis ${{ github.ref_name }}"
+          releaseBody: |
+            一朵永不忘记你的 AI 伙伴。
+
+            ## 下载指引
+            - **Windows**：`*-setup.exe`（NSIS 安装包）或 `.msi`
+            - **macOS**：`.dmg`（通用二进制，Intel 与 Apple Silicon 均可）
+              首次打开若提示"无法验证开发者"：系统设置 → 隐私与安全性 → 仍要打开
+            - **Linux**：`.AppImage`（免安装）或 `.deb`
+            - **Android**：`apk`（下方 assets 中，优先 `universal`）
+
+            iOS 版需要 Apple 开发者证书签名，暂不提供下载。
+
+            所有数据仅保存在设备本地，模型 API Key 不会经过任何第三方服务器。
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Locate Android NDK
+        run: echo "NDK_HOME=$(ls -d ${ANDROID_HOME}/ndk/*/ | head -n 1)" >> $GITHUB_ENV
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Init Android project
+        run: pnpm tauri android init
+
+      - name: Build APK
+        run: pnpm tauri android build --apk
+
+      - name: Upload APKs to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
