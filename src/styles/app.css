@@ -1329,6 +1329,93 @@ button {
   transform: scale(1.2);
 }
 
+/* in-chat search bar */
+.msg-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 clamp(12px, 4vw, 48px) 0;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: var(--shadow);
+  color: var(--text-3);
+  animation: view-in var(--dur) var(--ease-out);
+  z-index: 6;
+}
+.msg-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  font-size: 13px;
+  color: var(--text);
+  user-select: text;
+}
+.msg-search .search-count {
+  font-size: 11.5px;
+  color: var(--text-3);
+  min-width: 34px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* multi-select */
+.msg.selectable {
+  cursor: pointer;
+}
+.msg.selected .bubble {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.msg-selected {
+  margin: 0 -8px;
+  padding: 4px 8px;
+  background: var(--accent-soft);
+  border-radius: 12px;
+}
+.multiselect-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px clamp(14px, 4vw, 48px) calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+  color: var(--text-2);
+  animation: toast-up var(--dur) var(--ease-out);
+  z-index: 9;
+  flex-shrink: 0;
+}
+.msg .checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+}
+.msg .checkbox.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.msg.selectable:hover .bubble {
+  border-color: var(--accent);
+}
+
+/* search hit highlight */
+.search-hit .bubble {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  transition: outline-color 1.6s ease;
+}
+
 /* ============================================================
    Generic page (settings / agents / memory)
    ============================================================ */
@@ -2169,6 +2256,15 @@ textarea.input {
 
 /* mobile tabbar */
 .tabbar {
+  display: none;
+}
+
+/* classic bubble style: square corners, no tails */
+:root[data-bubble="classic"] .msg .bubble {
+  border-radius: 6px;
+}
+:root[data-bubble="classic"] .msg.ai .bubble::after,
+:root[data-bubble="classic"] .msg.user .bubble::after {
   display: none;
 }
 

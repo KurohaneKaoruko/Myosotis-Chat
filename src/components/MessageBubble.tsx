@@ -12,11 +12,17 @@ export default function MessageBubble({
   agent,
   isLast,
   streaming,
+  selectable,
+  selected,
+  onToggleSelect,
 }: {
   msg: ChatMessage;
   agent: Agent;
   isLast: boolean;
   streaming?: string;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -70,7 +76,10 @@ export default function MessageBubble({
   };
 
   return (
-    <div className={`msg ${isUser ? "user" : "ai"} ${msg.status === "error" ? "error" : ""}`}>
+    <div
+      className={`msg ${isUser ? "user" : "ai"} ${msg.status === "error" ? "error" : ""} ${selectable ? "selectable" : ""} ${selected ? "selected" : ""}`}
+      onClick={selectable ? onToggleSelect : undefined}
+    >
       {isUser ? (
         <div className="ava user-ava">{settings.userName?.trim()?.slice(0, 1) || "我"}</div>
       ) : (
@@ -84,6 +93,11 @@ export default function MessageBubble({
         </div>
       )}
       <div className="body">
+        {selectable && (
+          <div className={`checkbox ${selected ? "on" : ""}`} style={{ marginBottom: 4 }}>
+            {selected && "✓"}
+          </div>
+        )}
         {!!msg.images?.length && (
           <div className="images">
             {msg.images.map((img, i) => (

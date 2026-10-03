@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { toast } from "sonner";
+import { setLanguage } from "./i18n";
 import { db, exportAll, importAll } from "./lib/db";
 import { chatComplete } from "./lib/api";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle } from "./lib/memory";
@@ -51,6 +52,8 @@ interface AppState {
   confirmOptions: { title: string; message: string; confirmText?: string; danger?: boolean } | null;
   replyTo: { role: "user" | "assistant"; content: string } | null;
   pendingImages: string[];
+  multiSelectActive: boolean;
+  multiSelectIds: string[];
 
   // ----- lifecycle -----
   init: () => Promise<void>;
@@ -60,6 +63,10 @@ interface AppState {
   setReplyTo: (r: { role: "user" | "assistant"; content: string } | null) => void;
   addPendingImages: (urls: string[]) => void;
   consumePendingImages: () => void;
+  enterMultiSelect: (firstId?: string) => void;
+  toggleMultiSelect: (id: string) => void;
+  exitMultiSelect: () => void;
+  deleteSelected: () => Promise<void>;
   setSettings: (patch: Partial<Settings>) => void;
   setView: (v: View) => void;
   setSidebar: (open: boolean) => void;
@@ -141,6 +148,8 @@ export const useStore = create<AppState>()(
       confirmOptions: null,
       replyTo: null,
       pendingImages: [],
+      multiSelectActive: false,
+      multiSelectIds: [],
 
       // -------------------------------------------------------
       async init() {
@@ -198,10 +207,44 @@ export const useStore = create<AppState>()(
       consumePendingImages() {
         set({ pendingImages: [] });
       },
+      enterMultiSelect(firstId) {
+        set({ multiSelectActive: true, multiSelectIds: firstId ? [firstId] : [] });
+      },
+      toggleMultiSelect(id) {
+        set((s) => ({
+          multiSelectIds: s.multiSelectIds.includes(id)
+            ? s.multiSelectIds.filter((x) => x !== id)
+            : [...s.multiSelectIds, id],
+        }));
+      },
+      exitMultiSelect() {
+        set({ multiSelectActive: false, multiSelectIds: [] });
+      },
+      async deleteSelected() {
+        const ids = get().multiSelectIds;
+        if (!ids.length) return;
+        const convoId = get().activeConvoId;
+        await db.messages.bulkDelete(ids);
+        set((s) => ({
+          messages: s.messages.filter((m) => !ids.includes(m.id)),
+          multiSelectActive: false,
+          multiSelectIds: [],
+        }));
+        if (convoId) {
+          const last = await db.messages.where("conversationId").equals(convoId).reverse().sortBy("createdAt");
+          const lastMsg = last[0];
+          const patch = { lastMessage: lastMsg ? (lastMsg.content || "…").slice(0, 40) : "" };
+          await db.conversations.update(convoId, patch);
+          set((s) => ({ convos: s.convos.map((c) => (c.id === convoId ? { ...c, ...patch } : c)) }));
+        }
+        get().showToast(`已删除 ${ids.length} 条消息`, "success");
+      },
 
       setSettings(patch) {
-        set({ settings: { ...get().settings, ...patch } });
-        applyTheme(get().settings);
+        const next = { ...get().settings, ...patch };
+        set({ settings: next });
+        applyTheme(next);
+        if (patch.language) setLanguage(patch.language);
       },
       setView(v) {
         set({ view: v, sidebarOpen: false });
@@ -668,18 +711,23 @@ export const useStore = create<AppState>()(
     }),
     {
       name: "myosotis.settings",
-      version: 1,
+      version: 2,
       migrate: (persisted: any) => {
         // v0 -> v1: default theme azure -> mono (black/white minimal)
-        if (persisted && persisted.settings?.themeId === "azure") {
+        if (persisted?.settings?.themeId === "azure") {
           persisted.settings.themeId = "mono";
         }
-        // ensure genParams/fontSize exist for older snapshots
-        if (persisted?.settings && !persisted.settings.genParams) {
-          persisted.settings.genParams = { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
-        }
-        if (persisted?.settings && !persisted.settings.fontSize) {
-          persisted.settings.fontSize = 15;
+        // ensure fields added after v0.1.0 exist for older snapshots
+        if (persisted?.settings) {
+          if (!persisted.settings.genParams) {
+            persisted.settings.genParams = { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
+          }
+          if (!persisted.settings.fontSize) {
+            persisted.settings.fontSize = 15;
+          }
+          if (!persisted.settings.language) {
+            persisted.settings.language = "zh-CN";
+          }
         }
         return persisted;
       },

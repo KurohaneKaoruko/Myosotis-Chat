@@ -13,3 +13,8 @@ src-tauri/gen/
 *.log
 .DS_Store
 Thumbs.db
+
+# AI tooling (local only, never publish)
+openspec/
+.opencode/
+.agents/

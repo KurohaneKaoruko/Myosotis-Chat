@@ -498,6 +498,40 @@ function AppearanceCard() {
           ))}
         </div>
       </div>
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label>气泡风格</label>
+        <div className="chips">
+          <button
+            className={`chip ${(settings.bubbleStyle ?? "modern") === "modern" ? "on" : ""}`}
+            onClick={() => setSettings({ bubbleStyle: "modern" })}
+          >
+            现代圆角
+          </button>
+          <button
+            className={`chip ${settings.bubbleStyle === "classic" ? "on" : ""}`}
+            onClick={() => setSettings({ bubbleStyle: "classic" })}
+          >
+            经典直角
+          </button>
+        </div>
+      </div>
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label>界面语言 / Language</label>
+        <div className="chips">
+          <button
+            className={`chip ${settings.language === "zh-CN" ? "on" : ""}`}
+            onClick={() => setSettings({ language: "zh-CN" })}
+          >
+            简体中文
+          </button>
+          <button
+            className={`chip ${settings.language === "en" ? "on" : ""}`}
+            onClick={() => setSettings({ language: "en" })}
+          >
+            English
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

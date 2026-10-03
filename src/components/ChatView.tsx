@@ -1,4 +1,4 @@
-import { useEffect, useRef, Fragment, useState } from "react";
+import { useEffect, useMemo, useRef, Fragment, useState } from "react";
 import { useStore } from "../store";
 import { resolveModel } from "../lib/utils";
 import { Avatar, Icon, Menu, Modal, SelectBox, TipFor } from "./ui";
@@ -41,13 +41,38 @@ export default function ChatView() {
   const deleteConversation = useStore((s) => s.deleteConversation);
   const updateAgent = useStore((s) => s.updateAgent);
   const addPendingImages = useStore((s) => s.addPendingImages);
+  const multiSelectActive = useStore((s) => s.multiSelectActive);
+  const multiSelectIds = useStore((s) => s.multiSelectIds);
+  const enterMultiSelect = useStore((s) => s.enterMultiSelect);
+  const exitMultiSelect = useStore((s) => s.exitMultiSelect);
+  const toggleMultiSelect = useStore((s) => s.toggleMultiSelect);
+  const deleteSelected = useStore((s) => s.deleteSelected);
 
   const [showSummary, setShowSummary] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [showJump, setShowJump] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setQuery] = useState("");
+  const [matchIdx, setMatchIdx] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
   const dragCounter = useRef(0);
+
+  const q = searchQuery.trim().toLowerCase();
+  const matches = useMemo(
+    () => (q ? messages.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.id) : []),
+    [messages, q]
+  );
+
+  const gotoMatch = (dir: 1 | -1) => {
+    if (!matches.length) return;
+    const next = (matchIdx + dir + matches.length) % matches.length;
+    setMatchIdx(next);
+    const el = document.querySelector(`[data-msg-id="${matches[next]}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    el?.classList.add("search-hit");
+    setTimeout(() => el?.classList.remove("search-hit"), 1800);
+  };
 
   const convo = convos.find((c) => c.id === activeConvoId);
   const agent = agents.find((a) => a.id === convo?.agentId);
@@ -161,6 +186,17 @@ export default function ChatView() {
           )}
         </div>
         <div className="spacer" />
+        <TipFor text="搜索对话">
+          <button
+            className={`icon-btn ${searchOpen ? "active" : ""}`}
+            onClick={() => {
+              setSearchOpen(!searchOpen);
+              setQuery("");
+            }}
+          >
+            <Icon name="search" />
+          </button>
+        </TipFor>
         <TipFor text="开始新对话">
           <button className="icon-btn" onClick={() => newConversation(agent.id)}>
             <Icon name="plus" />
@@ -180,6 +216,7 @@ export default function ChatView() {
           items={[
             { label: "导出为 Markdown", icon: "download", onClick: () => exportConversation(convo.id) },
             { label: "查看记忆摘要", icon: "book", onClick: () => setShowSummary(true) },
+            { label: "多选消息", icon: "check", onClick: () => enterMultiSelect() },
             {
               label: "清空对话（保留记忆）",
               icon: "broom",
@@ -216,6 +253,48 @@ export default function ChatView() {
         />
       </header>
 
+      {searchOpen && (
+        <div className="msg-search">
+          <Icon name="search" size={15} />
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setMatchIdx(0);
+            }}
+            placeholder="在当前对话中搜索…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") gotoMatch(e.shiftKey ? -1 : 1);
+              if (e.key === "Escape") {
+                setSearchOpen(false);
+                setQuery("");
+              }
+            }}
+          />
+          <span className="search-count">
+            {q ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ""}
+          </span>
+          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(-1)} title="上一个">
+            <Icon name="back" size={14} />
+          </button>
+          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(1)} title="下一个">
+            <Icon name="down" size={14} />
+          </button>
+          <button
+            className="icon-btn"
+            style={{ width: 28, height: 28 }}
+            onClick={() => {
+              setSearchOpen(false);
+              setQuery("");
+            }}
+            title="关闭"
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      )}
+
       <div
         className={`chat-scroll ${dragging ? "dragging" : ""}`}
         ref={scrollRef}
@@ -245,7 +324,19 @@ export default function ChatView() {
             return (
               <Fragment key={m.id}>
                 {showDate && <div className="date-chip">{dateLabel(m.createdAt)}</div>}
-                <MessageBubble msg={m} agent={agent} isLast={i === messages.length - 1} />
+                <div
+                  data-msg-id={m.id}
+                  className={multiSelectIds.includes(m.id) ? "msg-selected" : undefined}
+                >
+                  <MessageBubble
+                    msg={m}
+                    agent={agent}
+                    isLast={i === messages.length - 1}
+                    selectable={multiSelectActive}
+                    selected={multiSelectIds.includes(m.id)}
+                    onToggleSelect={() => toggleMultiSelect(m.id)}
+                  />
+                </div>
               </Fragment>
             );
           })}
@@ -283,6 +374,35 @@ export default function ChatView() {
       </div>
 
       <Composer />
+
+      {multiSelectActive && (
+        <div className="multiselect-bar">
+          <span>
+            已选 <b>{multiSelectIds.length}</b> 条
+          </span>
+          <div style={{ flex: 1 }} />
+          <button className="btn sm ghost" onClick={exitMultiSelect}>
+            取消
+          </button>
+          <button
+            className="btn sm danger"
+            disabled={!multiSelectIds.length}
+            onClick={() => {
+              useStore
+                .getState()
+                .askConfirm({
+                  title: "批量删除",
+                  message: `删除选中的 ${multiSelectIds.length} 条消息？\n智能体的长期记忆不受影响。`,
+                  confirmText: "删除",
+                  danger: true,
+                })
+                .then((ok) => ok && deleteSelected());
+            }}
+          >
+            删除所选
+          </button>
+        </div>
+      )}
 
       {showSummary && (
         <Modal title="本对话的记忆摘要" onClose={() => setShowSummary(false)}>

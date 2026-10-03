@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import { marked } from "marked";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import Prism from "prismjs";
 // language components (order matters: deps first)
@@ -13,18 +13,60 @@ import "prismjs/components/prism-markdown";
 import "prismjs/components/prism-sql";
 import "prismjs/components/prism-yaml";
 
-marked.setOptions({ breaks: true, gfm: true, async: false });
+const marked = new Marked({ breaks: true, gfm: true, async: false });
+
+// KaTeX chain is lazy: only conversations that actually contain math pay for it.
+let katexInstance: Marked | null = null;
+let katexLoading: Promise<Marked> | null = null;
+
+function loadKatex(): Promise<Marked> {
+  katexLoading ??= (async () => {
+    const [{ default: markedKatex }] = await Promise.all([
+      import("marked-katex-extension"),
+      import("katex/dist/katex.min.css"),
+    ]);
+    katexInstance = new Marked({ breaks: true, gfm: true, async: false }).use(
+      markedKatex({ throwOnError: false })
+    );
+    return katexInstance;
+  })();
+  return katexLoading;
+}
+
+/** Loose detection: a false positive only triggers the lazy load, never wrong rendering. */
+function looksLikeMath(text: string): boolean {
+  return /\$\$[^$]+?\$\$|\$[^\s$][^$\n]*?[^\s$]\$/.test(text);
+}
+
+function sanitize(raw: string): string {
+  try {
+    return DOMPurify.sanitize(raw, { ADD_ATTR: ["target"] });
+  } catch {
+    return DOMPurify.sanitize(raw);
+  }
+}
+
+function render(text: string, withMath: boolean): string {
+  try {
+    const parser = withMath && katexInstance ? katexInstance : marked;
+    return sanitize(parser.parse(text || "") as string);
+  } catch {
+    return sanitize(text ?? "");
+  }
+}
 
 export default function Markdown({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => {
-    try {
-      const raw = marked.parse(text || "") as string;
-      return DOMPurify.sanitize(raw, { ADD_ATTR: ["target"] });
-    } catch {
-      return DOMPurify.sanitize(text ?? "");
+  const needsMath = useMemo(() => looksLikeMath(text), [text]);
+  const [mathReady, setMathReady] = useState(!!katexInstance);
+
+  useEffect(() => {
+    if (needsMath && !katexInstance) {
+      loadKatex().then(() => setMathReady(true));
     }
-  }, [text]);
+  }, [needsMath]);
+
+  const html = useMemo(() => render(text, needsMath && mathReady), [text, needsMath, mathReady]);
 
   useEffect(() => {
     const root = ref.current;

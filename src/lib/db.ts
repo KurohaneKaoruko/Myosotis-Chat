@@ -28,6 +28,10 @@ class MyosotisDB extends Dexie {
     this.version(2).stores({
       agents: "id, createdAt, updatedAt",
     });
+    // v3: prompts table for quick commands (trigger -> prompt template)
+    this.version(3).stores({
+      prompts: "id, trigger",
+    });
   }
 }
 

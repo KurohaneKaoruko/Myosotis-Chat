@@ -46,6 +46,8 @@ export interface Settings {
     contextTurns: number; // recent turns sent verbatim
   };
   fontSize: number; // message bubble font size
+  language: "zh-CN" | "en"; // UI language
+  bubbleStyle: "modern" | "classic"; // chat bubble appearance
   browserTts: boolean;
   browserStt: boolean;
   sendOnEnter: boolean;
@@ -105,6 +107,13 @@ export interface MemoryItem {
   updatedAt: number;
 }
 
+export interface PromptTemplate {
+  id: string;
+  trigger: string; // matched after "/" in the composer
+  content: string; // prompt template filled into the input
+  createdAt: number;
+}
+
 /** Resolved model+provider pair, ready for an API call. */
 export interface ResolvedModel {
   model: ModelConfig;
@@ -120,6 +129,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaults: { chat: null, vision: null, embedding: null, tts: null, stt: null },
   genParams: { temperature: 0.8, maxTokens: 4096, contextTurns: 12 },
   fontSize: 15,
+  language: "zh-CN",
+  bubbleStyle: "modern",
   browserTts: true,
   browserStt: true,
   sendOnEnter: true,

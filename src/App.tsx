@@ -27,10 +27,12 @@ export default function App() {
     applyTheme(settings);
   }, [settings.themeId, settings.themeMode, settings]);
 
-  // message font size as CSS var
+  // message font size as CSS var + i18n language sync + bubble style
   useEffect(() => {
     document.documentElement.style.setProperty("--msg-font", (settings.fontSize ?? 15) + "px");
-  }, [settings.fontSize]);
+    document.documentElement.dataset.bubble = settings.bubbleStyle ?? "modern";
+    setLanguage(settings.language ?? "zh-CN");
+  }, [settings.fontSize, settings.language, settings.bubbleStyle]);
 
   // global shortcuts: Ctrl/Cmd+K focuses search
   useEffect(() => {
@@ -91,10 +93,10 @@ export default function App() {
     <Tip.Provider delayDuration={350}>
       <div className="app-root">
         <TitleBar />
-        <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`}>
-          <Rail />
-          <Sidebar />
-          {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
+      <div className={`app ${view !== "chat" ? "no-sidebar" : ""}`} key={settings.language}>
+        <Rail />
+        <Sidebar />
+        {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
           <main className="main" data-wallpaper={settings.wallpaper} key={view}>
             {view === "chat" && <ChatView />}
             {view === "agents" && <AgentsView />}
