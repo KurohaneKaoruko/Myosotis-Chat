@@ -91,14 +91,20 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - name: Locate Android NDK
-        run: echo "NDK_HOME=$(ls -d ${ANDROID_HOME}/ndk/*/ | head -n 1)" >> $GITHUB_ENV
+      # the runner image ships a full Android SDK + NDK already;
+      # android-actions/setup-android is known to fail on new cmdline-tools,
+      # so we just accept licenses and locate the NDK ourselves
+      - name: Prepare Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/ndk"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          echo "NDK_HOME=$(ls -d ${ANDROID_HOME}/ndk/*/ | head -n 1)" >> $GITHUB_ENV
+          echo "NDK_HOME=$NDK_HOME"
 
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
