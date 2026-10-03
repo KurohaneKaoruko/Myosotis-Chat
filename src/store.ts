@@ -668,6 +668,21 @@ export const useStore = create<AppState>()(
     }),
     {
       name: "myosotis.settings",
+      version: 1,
+      migrate: (persisted: any) => {
+        // v0 -> v1: default theme azure -> mono (black/white minimal)
+        if (persisted && persisted.settings?.themeId === "azure") {
+          persisted.settings.themeId = "mono";
+        }
+        // ensure genParams/fontSize exist for older snapshots
+        if (persisted?.settings && !persisted.settings.genParams) {
+          persisted.settings.genParams = { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
+        }
+        if (persisted?.settings && !persisted.settings.fontSize) {
+          persisted.settings.fontSize = 15;
+        }
+        return persisted;
+      },
       partialize: (s) => ({
         settings: s.settings,
         activeConvoId: s.activeConvoId,

@@ -1607,7 +1607,9 @@ textarea.input {
   justify-content: center;
   color: #fff;
   font-weight: 800;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
 /* provider cards */

@@ -64,6 +64,7 @@ const ROLE_ROWS: { role: ModelRole; label: string; desc: string }[] = [
 ];
 
 const THEMES: { id: ThemeId; name: string; colors: string }[] = [
+  { id: "mono", name: "黑白", colors: "linear-gradient(135deg,#17181d,#5a6172)" },
   { id: "azure", name: "蔚蓝", colors: "linear-gradient(135deg,#3b82f6,#6366f1)" },
   { id: "violet", name: "紫罗兰", colors: "linear-gradient(135deg,#8b5cf6,#d946ef)" },
   { id: "rose", name: "蔷薇", colors: "linear-gradient(135deg,#f43f5e,#fb7185)" },

@@ -70,6 +70,23 @@
 }
 
 /* ---- accent palettes ---- */
+/* mono: black-on-light / white-on-dark minimalism */
+:root[data-theme="mono"] {
+  --accent: #1a1c22;
+  --accent-2: #414654;
+  --accent-deep: #101218;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(26, 28, 34, 0.09);
+  --accent-glow: rgba(26, 28, 34, 0.18);
+}
+:root[data-mode="dark"][data-theme="mono"] {
+  --accent: #f3f4f7;
+  --accent-2: #c6cbd6;
+  --accent-deep: #ffffff;
+  --accent-contrast: #101218;
+  --accent-soft: rgba(243, 244, 247, 0.1);
+  --accent-glow: rgba(243, 244, 247, 0.14);
+}
 :root[data-theme="azure"] {
   --accent: #3b82f6;
   --accent-2: #6366f1;

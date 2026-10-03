@@ -10,7 +10,7 @@
       (function () {
         try {
           var raw = localStorage.getItem("myosotis.settings");
-          var theme = raw ? (JSON.parse(raw).state || {}).themeId || "azure" : "azure";
+          var theme = raw ? (JSON.parse(raw).state || {}).themeId || "mono" : "mono";
           var mode = raw ? (JSON.parse(raw).state || {}).themeMode || "auto" : "auto";
           var dark = mode === "dark" || (mode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
           var root = document.documentElement;

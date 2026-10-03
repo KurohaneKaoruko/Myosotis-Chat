@@ -24,7 +24,7 @@ export interface ModelConfig {
   roles: ModelRole[];
 }
 
-export type ThemeId = "azure" | "violet" | "rose" | "forest" | "amber" | "ink";
+export type ThemeId = "mono" | "azure" | "violet" | "rose" | "forest" | "amber" | "ink";
 export type ThemeMode = "light" | "dark" | "auto";
 
 export interface Settings {
@@ -112,7 +112,7 @@ export interface ResolvedModel {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  themeId: "azure",
+  themeId: "mono",
   themeMode: "auto",
   wallpaper: "none",
   userName: "",
