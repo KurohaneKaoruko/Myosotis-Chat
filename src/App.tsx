@@ -48,6 +48,28 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // Android back gesture (and browser back): close overlays one by one
+  useEffect(() => {
+    const push = () => history.pushState({ myosotis: 1 }, "");
+    push(); // sentinel
+    const onPop = () => {
+      const s = useStore.getState();
+      if (s.confirmOptions) {
+        s.resolveConfirm(false);
+        push();
+      } else if (s.editingAgentId) {
+        s.setEditingAgentId(null);
+        push();
+      } else if (s.sidebarOpen) {
+        s.setSidebar(false);
+        push();
+      }
+      // nothing open: allow default behavior (app exit on Android)
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const dark =
     settings.themeMode === "dark" ||
     (settings.themeMode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
