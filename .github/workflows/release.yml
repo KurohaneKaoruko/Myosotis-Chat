@@ -112,6 +112,37 @@ jobs:
       - name: Init Android project
         run: pnpm tauri android init
 
+      # release APKs must be signed or Android refuses to install
+      # ("packageInfo is null" on many ROMs). Cache keeps the same key
+      # across builds so upgrades install cleanly.
+      - name: Restore signing keystore
+        id: keystore
+        uses: actions/cache@v4
+        with:
+          path: sign/ci-release.keystore
+          key: myosotis-release-keystore-v1
+
+      - name: Generate signing keystore
+        if: steps.keystore.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p sign
+          keytool -genkeypair -v \
+            -keystore sign/ci-release.keystore \
+            -alias myosotis \
+            -keyalg RSA -keysize 2048 -validity 36500 \
+            -storepass myosotis-release -keypass myosotis-release \
+            -dname "CN=Myosotis"
+
+      - name: Configure signing
+        run: |
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          storeFile=${{ github.workspace }}/sign/ci-release.keystore
+          storePassword=myosotis-release
+          keyAlias=myosotis
+          keyPassword=myosotis-release
+          EOF
+          cat src-tauri/gen/android/keystore.properties
+
       - name: Build APK
         run: pnpm tauri android build --apk
 
