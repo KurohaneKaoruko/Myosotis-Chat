@@ -3,6 +3,7 @@ import { useStore } from "../store";
 import { listRemoteModels } from "../lib/api";
 import { friendlyError } from "../lib/utils";
 import { Modal, Icon, SelectBox, Toggle, SliderRow } from "./ui";
+import { DEFAULT_SETTINGS } from "../types";
 import type { ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
 
 const PROTOCOL_LABELS: Record<Protocol, string> = {
@@ -89,6 +90,7 @@ export default function SettingsView() {
         <AppearanceCard />
         <VoiceCard />
         <ProfileCard />
+        <BackupCard />
         <DataCard />
         <div className="card" style={{ textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
           Myosotis v0.1.0 · 数据 100% 本地存储，直连模型服务商
@@ -621,6 +623,190 @@ function GenParamsCard() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ================================================================
+// WebDAV backup & restore
+// ================================================================
+function BackupCard() {
+  const settings = useStore((s) => s.settings);
+  const setSettings = useStore((s) => s.setSettings);
+  const showToast = useStore((s) => s.showToast);
+  const askConfirm = useStore((s) => s.askConfirm);
+  const wd = settings.webdav ?? DEFAULT_SETTINGS.webdav;
+  const [busy, setBusy] = useState<"backup" | "list" | "restore" | null>(null);
+  const [backups, setBackups] = useState<{ name: string; modifiedAt: Date | null }[] | null>(null);
+  const [selFile, setSelFile] = useState<string | null>(null);
+
+  const upd = (patch: Partial<typeof wd>) => setSettings({ webdav: { ...wd, ...patch } });
+  const cfg = () => ({
+    url: wd.url,
+    username: wd.username,
+    password: wd.appPassword,
+    directory: wd.directory,
+  });
+
+  const doBackup = async () => {
+    if (!wd.url.trim()) {
+      showToast("请先填写 WebDAV 地址", "error");
+      return;
+    }
+    setBusy("backup");
+    try {
+      const { webdavBackup } = await import("../lib/backup");
+      const f = await webdavBackup(cfg(), { encrypt: wd.encrypt, backupPassword: wd.backupPassword });
+      localStorage.setItem("myosotis.lastAutoBackup", String(Date.now()));
+      showToast(`备份成功：${f}`, "success");
+      const { webdavListBackups } = await import("../lib/backup");
+      setBackups(await webdavListBackups(cfg()));
+    } catch (e: any) {
+      showToast(friendlyError(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doList = async () => {
+    setBusy("list");
+    try {
+      const { webdavListBackups } = await import("../lib/backup");
+      const list = await webdavListBackups(cfg());
+      setBackups(list);
+      setSelFile(list[0]?.name ?? null);
+      if (!list.length) showToast("目录里没有备份文件");
+    } catch (e: any) {
+      showToast(friendlyError(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doRestore = async () => {
+    if (!selFile) {
+      showToast("先选择要恢复的备份文件", "error");
+      return;
+    }
+    const confirmed = await askConfirm({
+      title: "从 WebDAV 恢复",
+      message: `用「${selFile}」覆盖本机全部数据？\n${wd.encrypt ? "该备份已加密，将使用下方备份密码解密。" : ""}`,
+      confirmText: "覆盖恢复",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setBusy("restore");
+    try {
+      const { webdavRestore } = await import("../lib/backup");
+      await webdavRestore(cfg(), selFile, wd.backupPassword || undefined);
+      showToast("恢复完成，即将刷新", "success");
+      setTimeout(() => location.reload(), 900);
+    } catch (e: any) {
+      showToast(friendlyError(e), "error");
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3>
+        <Icon name="upload" size={16} /> WebDAV 云备份
+        <span className="hint">数据直达你自己的网盘，可选加密</span>
+      </h3>
+      <div className="field">
+        <label>服务器地址</label>
+        <input
+          className="input"
+          value={wd.url}
+          onChange={(e) => upd({ url: e.target.value })}
+          placeholder="如 https://dav.jianguoyun.com/dav/"
+        />
+      </div>
+      <div className="row">
+        <div className="field">
+          <label>账号</label>
+          <input className="input" value={wd.username} onChange={(e) => upd({ username: e.target.value })} autoComplete="off" />
+        </div>
+        <div className="field">
+          <label>应用密码</label>
+          <input
+            className="input"
+            type="password"
+            value={wd.appPassword}
+            onChange={(e) => upd({ appPassword: e.target.value })}
+            autoComplete="off"
+          />
+        </div>
+      </div>
+      <div className="field">
+        <label>备份目录</label>
+        <input className="input" value={wd.directory} onChange={(e) => upd({ directory: e.target.value })} placeholder="/Myosotis" />
+      </div>
+      <div className="set-row">
+        <div className="info">
+          <div className="t">加密备份</div>
+          <div className="d">用密码加密后上传，服务器不可读明文（AES-GCM）</div>
+        </div>
+        <Toggle checked={wd.encrypt} onChange={(v) => upd({ encrypt: v })} />
+      </div>
+      {wd.encrypt && (
+        <div className="field">
+          <label>备份密码</label>
+          <input
+            className="input"
+            type="password"
+            value={wd.backupPassword}
+            onChange={(e) => upd({ backupPassword: e.target.value })}
+            placeholder="恢复时必须输入相同密码"
+            autoComplete="new-password"
+          />
+          <div className="desc">⚠ 密码丢失将无法恢复加密备份，请务必牢记</div>
+        </div>
+      )}
+      <div className="field">
+        <label>自动备份</label>
+        <div className="chips">
+          {(
+            [
+              ["off", "关闭"],
+              ["daily", "每天"],
+              ["weekly", "每周"],
+            ] as const
+          ).map(([v, label]) => (
+            <button key={v} className={`chip ${wd.autoBackup === v ? "on" : ""}`} onClick={() => upd({ autoBackup: v })}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="desc">开启后，启动应用时若超过所选周期未备份则自动执行</div>
+      </div>
+
+      <div className="row">
+        <button className="btn primary" onClick={doBackup} disabled={busy !== null}>
+          {busy === "backup" ? "备份中…" : "立即备份"}
+        </button>
+        <button className="btn" onClick={doList} disabled={busy !== null || !wd.url.trim()}>
+          {busy === "list" ? "获取中…" : "查看云端备份"}
+        </button>
+      </div>
+
+      {backups && (
+        <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
+          <label>云端备份</label>
+          <SelectBox
+            value={selFile}
+            onChange={(v) => setSelFile(v)}
+            options={backups.map((b) => ({
+              value: b.name,
+              label: `${b.name}${b.modifiedAt ? ` · ${b.modifiedAt.toLocaleString("zh-CN")}` : ""}`,
+            }))}
+            placeholder="选择备份"
+          />
+          <button className="btn danger" style={{ marginTop: 8 }} onClick={doRestore} disabled={busy !== null || !selFile}>
+            {busy === "restore" ? "恢复中…" : "从所选备份恢复"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -48,6 +48,15 @@ export interface Settings {
   fontSize: number; // message bubble font size
   language: "zh-CN" | "en"; // UI language
   bubbleStyle: "modern" | "classic"; // chat bubble appearance
+  webdav: {
+    url: string;
+    username: string;
+    appPassword: string;
+    directory: string;
+    encrypt: boolean;
+    backupPassword: string;
+    autoBackup: "off" | "daily" | "weekly";
+  };
   browserTts: boolean;
   browserStt: boolean;
   sendOnEnter: boolean;
@@ -135,6 +144,15 @@ export const DEFAULT_SETTINGS: Settings = {
   fontSize: 15,
   language: "zh-CN",
   bubbleStyle: "modern",
+  webdav: {
+    url: "",
+    username: "",
+    appPassword: "",
+    directory: "/Myosotis",
+    encrypt: false,
+    backupPassword: "",
+    autoBackup: "off",
+  },
   browserTts: true,
   browserStt: true,
   sendOnEnter: true,

@@ -179,6 +179,26 @@ export const useStore = create<AppState>()(
             await get().openConversation(last);
           } catch {}
         }
+        // fire-and-forget scheduled auto backup (WebDAV)
+        const wd = get().settings.webdav;
+        if (wd && wd.autoBackup !== "off" && wd.url.trim()) {
+          const lastBk = Number(localStorage.getItem("myosotis.lastAutoBackup") || 0);
+          const interval = wd.autoBackup === "daily" ? 86400000 : 7 * 86400000;
+          if (Date.now() - lastBk > interval) {
+            import("./lib/backup")
+              .then(({ webdavBackup }) =>
+                webdavBackup(
+                  { url: wd.url, username: wd.username, password: wd.appPassword, directory: wd.directory },
+                  { encrypt: wd.encrypt, backupPassword: wd.backupPassword }
+                )
+              )
+              .then((f) => {
+                localStorage.setItem("myosotis.lastAutoBackup", String(Date.now()));
+                get().showToast(`自动备份完成：${f}`, "success");
+              })
+              .catch((e) => get().showToast(`自动备份失败：${e?.message ?? e}`, "error"));
+          }
+        }
       },
 
       showToast(text, kind = "info") {
@@ -728,6 +748,17 @@ export const useStore = create<AppState>()(
           if (!persisted.settings.language) {
             persisted.settings.language = "zh-CN";
           }
+          if (!persisted.settings.webdav) {
+            persisted.settings.webdav = {
+              url: "",
+              username: "",
+              appPassword: "",
+              directory: "/Myosotis",
+              encrypt: false,
+              backupPassword: "",
+              autoBackup: "off",
+            };
+          }
         }
         return persisted;
       },
@@ -736,6 +767,22 @@ export const useStore = create<AppState>()(
         activeConvoId: s.activeConvoId,
         memoryAgentFilter: s.memoryAgentFilter,
       }),
+      // merge persisted settings over defaults so newly added fields always exist
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as any;
+        const merged = {
+          ...current,
+          ...p,
+          settings: {
+            ...DEFAULT_SETTINGS,
+            ...(p.settings ?? {}),
+            defaults: { ...DEFAULT_SETTINGS.defaults, ...(p.settings?.defaults ?? {}) },
+            genParams: { ...DEFAULT_SETTINGS.genParams, ...(p.settings?.genParams ?? {}) },
+            webdav: { ...DEFAULT_SETTINGS.webdav, ...(p.settings?.webdav ?? {}) },
+          },
+        };
+        return merged as AppState;
+      },
       onRehydrateStorage: () => (state) => {
         if (state?.settings) applyTheme(state.settings);
       },
