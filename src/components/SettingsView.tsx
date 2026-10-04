@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useStore } from "../store";
+import { db } from "../lib/db";
 import { listRemoteModels } from "../lib/api";
 import { friendlyError } from "../lib/utils";
 import { Modal, Icon, SelectBox, Toggle, SliderRow } from "./ui";
-import { DEFAULT_SETTINGS } from "../types";
+import { DEFAULT_SETTINGS, type PromptTemplate } from "../types";
 import type { ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
 
 const PROTOCOL_LABELS: Record<Protocol, string> = {
@@ -89,6 +91,7 @@ export default function SettingsView() {
         <GenParamsCard />
         <AppearanceCard />
         <VoiceCard />
+        <PromptCard />
         <ProfileCard />
         <BackupCard />
         <DataCard />
@@ -808,6 +811,138 @@ function BackupCard() {
         </div>
       )}
     </div>
+  );
+}
+
+// ================================================================
+// Quick commands (prompt templates triggered by "/trigger")
+// ================================================================
+function PromptCard() {
+  const showToast = useStore((s) => s.showToast);
+  const askConfirm = useStore((s) => s.askConfirm);
+  const prompts = useLiveQuery(() => db.prompts.toArray(), []) ?? [];
+  const [editing, setEditing] = useState<PromptTemplate | "new" | null>(null);
+
+  return (
+    <div className="card">
+      <h3>
+        <Icon name="zap" size={16} /> 快捷指令
+        <span className="hint">输入框输入 / 触发词 快速填入提示词</span>
+      </h3>
+      {prompts.length === 0 && (
+        <div style={{ color: "var(--text-3)", fontSize: 13, marginBottom: 10 }}>
+          还没有指令。创建如触发词「周报」、内容「帮我写本周工作周报，格式：…」的指令，之后输入 /周报 即可填入。
+        </div>
+      )}
+      {prompts.map((p) => (
+        <div key={p.id} className="provider-card">
+          <div className="logo" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+            /
+          </div>
+          <div className="info">
+            <div className="name">/{p.trigger}</div>
+            <div className="meta">{p.content.slice(0, 60)}</div>
+          </div>
+          <button className="icon-btn" title="编辑" onClick={() => setEditing(p)}>
+            <Icon name="edit" size={17} />
+          </button>
+          <button
+            className="icon-btn danger"
+            title="删除"
+            onClick={() => {
+              askConfirm({
+                title: "删除指令",
+                message: `删除快捷指令「/${p.trigger}」？`,
+                confirmText: "删除",
+                danger: true,
+              }).then((ok) => {
+                if (ok) db.prompts.delete(p.id);
+              });
+            }}
+          >
+            <Icon name="trash" size={17} />
+          </button>
+        </div>
+      ))}
+      <button className="btn primary" style={{ width: "100%" }} onClick={() => setEditing("new")}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Icon name="plus" size={16} /> 新建指令
+        </span>
+      </button>
+
+      {editing && (
+        <PromptEditor
+          prompt={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+function PromptEditor({
+  prompt,
+  onClose,
+  showToast,
+}: {
+  prompt: PromptTemplate | null;
+  onClose: () => void;
+  showToast: (t: string, k?: "info" | "error" | "success") => void;
+}) {
+  const [trigger, setTrigger] = useState(prompt?.trigger ?? "");
+  const [content, setContent] = useState(prompt?.content ?? "");
+
+  const save = async () => {
+    const trig = trigger.trim().replace(/^\//, "").replace(/\s+/g, "");
+    if (!trig || !content.trim()) {
+      showToast("触发词和内容都要填", "error");
+      return;
+    }
+    if (prompt) {
+      await db.prompts.update(prompt.id, { trigger: trig, content: content.trim() });
+    } else {
+      await db.prompts.add({
+        id: `prm_${Math.random().toString(36).slice(2, 12)}`,
+        trigger: trig,
+        content: content.trim(),
+        createdAt: Date.now(),
+      });
+    }
+    showToast("已保存", "success");
+    onClose();
+  };
+
+  return (
+    <Modal
+      title={prompt ? "编辑指令" : "新建指令"}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn ghost" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn primary" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <label>触发词（输入 / 后匹配）</label>
+        <input className="input" value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder="如：周报" autoFocus />
+      </div>
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label>提示词模板</label>
+        <textarea
+          className="input"
+          rows={4}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="选中后填入输入框的完整提示词，可继续修改后发送"
+        />
+      </div>
+    </Modal>
   );
 }
 

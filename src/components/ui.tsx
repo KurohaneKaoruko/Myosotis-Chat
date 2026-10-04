@@ -137,6 +137,14 @@ const paths: Record<string, ReactNode> = {
       {P("M10 4l10 10-4 4L6 8z", "c")}
     </>
   ),
+  zap: P("M13 2 4 14h6l-1 8 9-12h-6z"),
+  headphones: (
+    <>
+      {P("M4 14v-2a8 8 0 0 1 16 0v2")}
+      {P("M4 14h2a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4z", "b")}
+      {P("M20 14h-2a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2z", "c")}
+    </>
+  ),
 };
 
 export type IconName = keyof typeof paths;

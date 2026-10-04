@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useStore } from "../store";
 import { Icon } from "./ui";
-import { SttSession, sttSupported } from "../lib/speech";
+import { SttSession, sttSupported, speakSmart, stopAudio } from "../lib/speech";
 import { sttTranscribe } from "../lib/api";
+import { db } from "../lib/db";
 import { resolveModel } from "../lib/utils";
 
 const MAX_IMG_SIDE = 1024;
@@ -47,6 +49,9 @@ export default function Composer() {
   const sttRef = useRef<SttSession | null>(null);
   const baseTextRef = useRef("");
   const recRef = useRef<{ recorder: MediaRecorder; chunks: Blob[] } | null>(null);
+  const voiceChatRef = useRef(false);
+  const interruptRef = useRef<SttSession | null>(null);
+  const prevStreamingRef = useRef(false);
 
   const streamingConvoId = useStore((s) => s.streamingConvoId);
   const activeConvoId = useStore((s) => s.activeConvoId);
@@ -60,6 +65,16 @@ export default function Composer() {
   const send = useStore((s) => s.send);
   const stop = useStore((s) => s.stop);
   const showToast = useStore((s) => s.showToast);
+  const messages = useStore((s) => s.messages);
+  const streamingNow = useStore((s) => s.streamingConvoId) !== null;
+  const [voiceChat, setVoiceChat] = useState(false);
+
+  const prompts = useLiveQuery(() => db.prompts.toArray(), []) ?? [];
+  const slashQuery = text.startsWith("/") && !text.includes("\n") ? text.slice(1).toLowerCase() : null;
+  const promptMatches =
+    slashQuery !== null
+      ? prompts.filter((p) => p.trigger.toLowerCase().startsWith(slashQuery)).slice(0, 6)
+      : [];
 
   const busy = !!streamingConvoId;
   const hasVision = !!resolveModel("vision", models, providers, settings);
@@ -114,7 +129,7 @@ export default function Composer() {
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // ---------------- voice input ----------------
+  // ---------------- voice input & continuous voice chat ----------------
   const stopListening = () => {
     sttRef.current?.stop();
     sttRef.current = null;
@@ -125,6 +140,36 @@ export default function Composer() {
       recRef.current = null;
     }
     setListening(false);
+  };
+
+  const stopInterruptListener = () => {
+    interruptRef.current?.stop();
+    interruptRef.current = null;
+  };
+
+  // while the reply is being spoken, listen for the user's voice to interrupt
+  const startInterruptListener = () => {
+    if (!sttSupported()) return;
+    const s = new SttSession();
+    interruptRef.current = s;
+    let fired = false;
+    s.start(
+      () => {
+        if (fired) return;
+        fired = true;
+        stopAudio();
+        stopInterruptListener();
+        if (voiceChatRef.current) startListening();
+      },
+      () => {},
+      () => {
+        interruptRef.current = null;
+      }
+    );
+  };
+
+  const resumeVoiceChatAfterReply = () => {
+    if (voiceChatRef.current && !interruptRef.current) startListening();
   };
 
   const startListening = async () => {
@@ -139,8 +184,17 @@ export default function Composer() {
       sttRef.current = session;
       setListening(true);
       session.start(
-        (partial) => setText((baseTextRef.current + " " + partial).trim()),
+        (partial) => {
+          setText((baseTextRef.current + " " + partial).trim());
+          stopAudio(); // speaking? the user wants to interrupt
+        },
         (finalT) => {
+          if (voiceChatRef.current) {
+            // continuous mode: send right away, reply is spoken when ready
+            stopListening();
+            send(finalT.trim());
+            return;
+          }
           baseTextRef.current = (baseTextRef.current + " " + finalT).trim();
           setText(baseTextRef.current);
         },
@@ -168,7 +222,14 @@ export default function Composer() {
         showToast("正在识别语音…");
         try {
           const t = await sttTranscribe(rm, blob);
-          if (t) setText((prev) => (prev ? prev + " " + t : t));
+          if (t) {
+            if (voiceChatRef.current) {
+              stopListening();
+              send(t.trim());
+            } else {
+              setText((prev) => (prev ? prev + " " + t : t));
+            }
+          }
         } catch (e: any) {
           showToast(`语音识别失败：${e?.message ?? e}`, "error");
         }
@@ -180,6 +241,46 @@ export default function Composer() {
       showToast("无法访问麦克风，请检查系统权限", "error");
     }
   };
+
+  // ---------------- continuous voice chat mode ----------------
+  const toggleVoiceChat = () => {
+    if (voiceChat) {
+      voiceChatRef.current = false;
+      setVoiceChat(false);
+      stopListening();
+      stopInterruptListener();
+      stopAudio();
+      return;
+    }
+    if (!activeConvoId) return;
+    voiceChatRef.current = true;
+    setVoiceChat(true);
+    startListening();
+  };
+
+  // generation finished → speak the reply, then resume listening
+  useEffect(() => {
+    if (!voiceChat) {
+      prevStreamingRef.current = streamingNow;
+      return;
+    }
+    if (prevStreamingRef.current && !streamingNow) {
+      const lastAi = [...messages].reverse().find((m) => m.role === "assistant" && m.status === "ok");
+      if (lastAi) {
+        speakSmart(lastAi.content, {
+          settings,
+          models,
+          providers,
+          onDone: resumeVoiceChatAfterReply,
+        });
+        startInterruptListener();
+      } else {
+        resumeVoiceChatAfterReply();
+      }
+    }
+    prevStreamingRef.current = streamingNow;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamingNow, voiceChat]);
 
   return (
     <div className="composer-wrap">
@@ -213,6 +314,33 @@ export default function Composer() {
               </button>
             </div>
           )}
+          {voiceChat && (
+            <div className="voice-chat-bar">
+              <span className="typing">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span>语音对话中：说完自动发送，回复自动朗读 · 再点耳机退出</span>
+            </div>
+          )}
+          {promptMatches.length > 0 && (
+            <div className="prompt-pop">
+              {promptMatches.map((p) => (
+                <button
+                  key={p.id}
+                  className="prompt-item"
+                  onClick={() => {
+                    setText(p.content);
+                    taRef.current?.focus();
+                  }}
+                >
+                  <b>/{p.trigger}</b>
+                  <span>{p.content.slice(0, 50)}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {images.length > 0 && (
             <div className="img-previews">
               {images.map((img, i) => (
@@ -236,6 +364,13 @@ export default function Composer() {
             disabled={!activeConvoId}
           />
         </div>
+        <button
+          className={`tool ${voiceChat ? "active" : ""}`}
+          title={voiceChat ? "退出语音对话模式" : "连续语音对话（说完自动发送，回复自动朗读）"}
+          onClick={toggleVoiceChat}
+        >
+          <Icon name="headphones" />
+        </button>
         <button
           className={`tool ${listening ? "active" : ""}`}
           title={sttAvailable ? (listening ? "停止识别" : "语音输入") : "语音输入不可用"}

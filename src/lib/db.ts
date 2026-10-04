@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { Agent, ChatMessage, Conversation, MemoryItem, ModelConfig, Provider } from "../types";
+import type { Agent, ChatMessage, Conversation, MemoryItem, ModelConfig, PromptTemplate, Provider } from "../types";
 
 /**
  * Local-first storage. Everything lives in IndexedDB:
@@ -13,6 +13,7 @@ class MyosotisDB extends Dexie {
   conversations!: Table<Conversation, string>;
   messages!: Table<ChatMessage, string>;
   memories!: Table<MemoryItem, string>;
+  prompts!: Table<PromptTemplate, string>;
 
   constructor() {
     super("myosotis");

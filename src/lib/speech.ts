@@ -123,10 +123,54 @@ export async function playTtsBlob(blob: Blob): Promise<void> {
   await audio.play();
 }
 
+// Verification imports are resolved at module load (hoisted ESM).
+import { resolveModel } from "./utils";
+import { ttsSynthesize } from "./api";
+import type { ModelConfig, Provider, Settings } from "../types";
+
 export function stopAudio(): void {
   if (currentAudio) {
     currentAudio.pause();
     currentAudio = null;
   }
   stopSpeak();
+}
+
+// ----------------------------------------------------------------
+// Unified speak: browser TTS (zero-config) or cloud model
+// ----------------------------------------------------------------
+export async function speakSmart(
+  text: string,
+  opts: {
+    settings: Settings;
+    models: ModelConfig[];
+    providers: Provider[];
+    onDone?: () => void;
+  }
+): Promise<void> {
+  const clean = text
+    .replace(/```[\s\S]*?```/g, "代码略")
+    .replace(/[*_#>`~\[\]()]/g, "")
+    .trim();
+  if (!clean) {
+    opts.onDone?.();
+    return;
+  }
+  if (opts.settings.browserTts) {
+    speakBrowser(clean, opts.onDone);
+    return;
+  }
+  const rm = resolveModel("tts", opts.models, opts.providers, opts.settings);
+  if (!rm) {
+    speakBrowser(clean, opts.onDone);
+    return;
+  }
+  try {
+    const blob = await ttsSynthesize(rm, clean.slice(0, 800));
+    await playTtsBlob(blob);
+    opts.onDone?.();
+  } catch {
+    // cloud TTS failed — fall back to browser voice so voice chat keeps flowing
+    speakBrowser(clean, opts.onDone);
+  }
 }
