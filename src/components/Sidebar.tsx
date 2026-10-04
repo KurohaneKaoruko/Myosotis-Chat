@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Avatar, Icon, Menu, PromptModal, TipFor } from "./ui";
+import { t } from "../i18n";
 import { formatTime } from "../lib/utils";
 
 export default function Sidebar() {
@@ -153,12 +154,12 @@ export default function Sidebar() {
       </div>
 
       <div className="sidebar-foot">
-        <span>🔒 数据仅保存在本机</span>
+        <span>🔒 {t("dataLocalOnly")}</span>
       </div>
 
       {renaming && (
         <PromptModal
-          title="重命名对话"
+          title={t("renameConvo")}
           label="对话名称"
           initial={convos.find((c) => c.id === renaming)?.title}
           onClose={() => setRenaming(null)}

@@ -11,6 +11,7 @@ import SettingsView from "./components/SettingsView";
 import AgentEditor from "./components/AgentEditor";
 import TitleBar from "./components/TitleBar";
 import { ConfirmHost, Icon, Tip, TipFor, type IconName } from "./components/ui";
+import { t } from "./i18n";
 
 export default function App() {
   const ready = useStore((s) => s.ready);
@@ -89,7 +90,6 @@ export default function App() {
   if (!settings.onboardingDone && providers.length === 0) {
     return <Onboarding />;
   }
-
   return (
     <Tip.Provider delayDuration={350}>
       <div className="app-root">
@@ -139,11 +139,11 @@ function ConfirmHostBridge() {
 // ----------------------------------------------------------------
 // Mobile bottom tab bar (hidden on desktop via CSS)
 // ----------------------------------------------------------------
-const TABS: { view: string; icon: IconName; label: string }[] = [
-  { view: "chat", icon: "chat", label: "聊天" },
-  { view: "agents", icon: "agents", label: "智能体" },
-  { view: "memory", icon: "memory", label: "记忆" },
-  { view: "settings", icon: "settings", label: "设置" },
+const TABS: { view: string; icon: IconName; labelKey: "navChat" | "navAgents" | "navMemory" | "navSettings" }[] = [
+  { view: "chat", icon: "chat", labelKey: "navChat" },
+  { view: "agents", icon: "agents", labelKey: "navAgents" },
+  { view: "memory", icon: "memory", labelKey: "navMemory" },
+  { view: "settings", icon: "settings", labelKey: "navSettings" },
 ];
 
 function TabBar() {
@@ -152,17 +152,17 @@ function TabBar() {
   const setSidebar = useStore((s) => s.setSidebar);
   return (
     <nav className="tabbar">
-      {TABS.map((t) => (
+      {TABS.map((tab) => (
         <button
-          key={t.view}
-          className={`nav-item ${view === t.view ? "active" : ""}`}
+          key={tab.view}
+          className={`nav-item ${view === tab.view ? "active" : ""}`}
           onClick={() => {
-            setView(t.view as any);
-            if (t.view === "chat") setSidebar(true); // mobile: show conversation list
+            setView(tab.view as any);
+            if (tab.view === "chat") setSidebar(true); // mobile: show conversation list
           }}
         >
-          <Icon name={t.icon} />
-          {t.label}
+          <Icon name={tab.icon} />
+          {t(tab.labelKey)}
         </button>
       ))}
     </nav>
@@ -185,32 +185,32 @@ function Onboarding() {
         <div className="onboard">
           <div className="onboard-card">
             <img className="logo" src="logo.png" alt="Myosotis" />
-            <h1>Myosotis</h1>
+            <h1>{t("obTitle")}</h1>
             <div className="sub">
-              一朵永不忘记你的 AI 朋友。
+              {t("obSlogan")}
               <br />
-              它记得你说过的一切，而这一切只保存在你自己的设备上。
+              {t("obSub")}
             </div>
             <div className="steps">
               <div className="step">
                 <div className="n">1</div>
                 <div>
-                  <div className="t">添加一个大模型</div>
-                  <div className="d">填入任意一家服务商的 API Key，只需一次</div>
+                  <div className="t">{t("obStep1")}</div>
+                  <div className="d">{t("obStep1d")}</div>
                 </div>
               </div>
               <div className="step">
                 <div className="n">2</div>
                 <div>
-                  <div className="t">创建你的智能体</div>
-                  <div className="d">从模板开始或从零设定性格，人设完全自定义</div>
+                  <div className="t">{t("obStep2")}</div>
+                  <div className="d">{t("obStep2d")}</div>
                 </div>
               </div>
               <div className="step">
                 <div className="n">3</div>
                 <div>
-                  <div className="t">开始聊天</div>
-                  <div className="d">它会自然地记住你的喜好、经历与约定</div>
+                  <div className="t">{t("obStep3")}</div>
+                  <div className="d">{t("obStep3d")}</div>
                 </div>
               </div>
             </div>
