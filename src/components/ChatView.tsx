@@ -229,7 +229,7 @@ export default function ChatView() {
                     confirmText: "清空",
                     danger: true,
                   })
-                  .then((ok) => ok && clearConversation(convo.id));
+                  .then((ok) => { if (ok) clearConversation(convo.id); });
               },
             },
             "separator",
@@ -246,7 +246,7 @@ export default function ChatView() {
                     confirmText: "删除",
                     danger: true,
                   })
-                  .then((ok) => ok && deleteConversation(convo.id));
+                  .then((ok) => { if (ok) deleteConversation(convo.id); });
               },
             },
           ]}
@@ -396,7 +396,7 @@ export default function ChatView() {
                   confirmText: "删除",
                   danger: true,
                 })
-                .then((ok) => ok && deleteSelected());
+                .then((ok) => { if (ok) deleteSelected(); });
             }}
           >
             删除所选

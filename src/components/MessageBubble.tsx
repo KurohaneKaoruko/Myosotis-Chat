@@ -197,7 +197,7 @@ export default function MessageBubble({
                 useStore
                   .getState()
                   .askConfirm({ title: "删除消息", message: "删除这条消息？", confirmText: "删除", danger: true })
-                  .then((ok) => ok && deleteMessage(msg.id));
+                  .then((ok) => { if (ok) deleteMessage(msg.id); });
               }}
             >
               <Icon name="trash" size={12} /> 删除

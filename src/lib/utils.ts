@@ -1,4 +1,4 @@
-import type { ModelConfig, Provider, ResolvedModel, Settings } from "./types";
+import type { ModelRole, ModelConfig, Provider, ResolvedModel, Settings } from "../types";
 
 export function uid(prefix = ""): string {
   const core =
@@ -44,14 +44,14 @@ export function trimUrl(u: string): string {
 }
 
 export function resolveModel(
-  role: "chat" | "vision" | "embedding" | "tts" | "stt",
+  role: ModelRole,
   models: ModelConfig[],
   providers: Provider[],
   settings: Settings,
   agentModels?: Partial<Record<"chat" | "vision" | "embedding", string>>
 ): ResolvedModel | null {
   // 1. agent override (chat can fall back to its own chat model for vision if capable)
-  const overrideId = agentModels?.[role];
+  const overrideId = agentModels?.[role as "chat" | "vision" | "embedding"];
   if (overrideId) {
     const m = models.find((x) => x.id === overrideId);
     if (m) {

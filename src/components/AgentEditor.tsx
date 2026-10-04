@@ -97,7 +97,7 @@ function EditorBody({ agentId }: { agentId: string }) {
                   confirmText: "删除",
                   danger: true,
                 })
-                .then((ok) => ok && deleteAgent(agent.id));
+                .then((ok) => { if (ok) deleteAgent(agent.id); });
             }}
           >
             删除

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { setLanguage } from "./i18n";
 import { useStore, applyTheme } from "./store";
 import Rail from "./components/Rail";
 import Sidebar from "./components/Sidebar";

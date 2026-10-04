@@ -111,7 +111,7 @@ export default function Sidebar() {
                                 confirmText: "删除",
                                 danger: true,
                               })
-                              .then((ok) => ok && deleteConversation(c.id));
+                              .then((ok) => { if (ok) deleteConversation(c.id); });
                           },
                         },
                       ]}

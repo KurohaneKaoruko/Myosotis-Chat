@@ -46,10 +46,37 @@ function sanitize(raw: string): string {
   }
 }
 
+/**
+ * marked-katex only renders $$...$$ when the delimiters can start a block.
+ * Real model output often puts them mid-line ("text $$x$$ text"), so we
+ * normalize them onto their own lines. Fenced code blocks and inline code
+ * spans are never touched.
+ */
+function normalizeBlockMath(text: string): string {
+  if (!text.includes("$$")) return text;
+  let inFence = false;
+  const lines = text.split("\n").map((line) => {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      return line;
+    }
+    if (inFence || !line.includes("$$")) return line;
+    const masks: string[] = [];
+    let l = line.replace(/`[^`]*`/g, (m) => {
+      masks.push(m);
+      return `\u0000${masks.length - 1}\u0000`;
+    });
+    l = l.replace(/\$\$([^$\n]+?)\$\$/g, (_, inner) => `\n\n$$${inner}$$\n\n`);
+    return l.replace(/\u0000(\d+)\u0000/g, (_, i) => masks[Number(i)]);
+  });
+  return lines.join("\n");
+}
+
 function render(text: string, withMath: boolean): string {
   try {
     const parser = withMath && katexInstance ? katexInstance : marked;
-    return sanitize(parser.parse(text || "") as string);
+    const src = withMath && katexInstance ? normalizeBlockMath(text) : text;
+    return sanitize(parser.parse(src || "") as string);
   } catch {
     return sanitize(text ?? "");
   }

@@ -66,15 +66,30 @@ export function buildSystemPrompt(
 // ----------------------------------------------------------------
 // Retrieval
 // ----------------------------------------------------------------
+
+/** Decay half-life: a memory loses half its score every 90 days without hits. */
+const DECAY_HALF_LIFE_DAYS = 90;
+
+function memoryScore(m: MemoryItem, sim: number): number {
+  const last = m.lastHitAt ?? m.createdAt;
+  const days = Math.max(0, (Date.now() - last) / 86400000);
+  const decay = Math.pow(0.5, days / DECAY_HALF_LIFE_DAYS);
+  const weight = 0.4 + 0.15 * m.importance;
+  return sim * weight * decay;
+}
+
 export async function retrieveMemories(
   agentId: string,
   query: string,
   embeddingRm: { model: ModelConfig; provider: Provider } | null
 ): Promise<MemoryItem[]> {
-  const all = await db.memories.where("agentId").equals(agentId).toArray();
+  const all = await db.memories.toArray();
   if (!all.length) return [];
-  const pinned = all.filter((m) => m.pinned);
-  const rest = all.filter((m) => !m.pinned);
+  // private memories of this agent + globally shared ones
+  const mine = all.filter((m) => m.agentId === agentId || m.scope === "global");
+  if (!mine.length) return [];
+  const pinned = mine.filter((m) => m.pinned);
+  const rest = mine.filter((m) => !m.pinned);
   if (!rest.length) return pinned;
 
   let scored: { m: MemoryItem; s: number }[];
@@ -85,18 +100,16 @@ export async function retrieveMemories(
     } catch {
       qvec = null;
     }
-    if (qvec && qvec.length) {
-      scored = rest.map((m) => ({ m, s: m.embedding?.length ? cosine(qvec!, m.embedding) : 0 }));
-    } else {
-      scored = rest.map((m) => ({ m, s: textSimilarity(query, m.content) }));
-    }
+    const sim = (m: MemoryItem) =>
+      m.embedding?.length && qvec?.length ? cosine(qvec, m.embedding) : textSimilarity(query, m.content);
+    scored = rest.map((m) => ({ m, s: memoryScore(m, sim(m)) }));
   } else {
-    scored = rest.map((m) => ({ m, s: textSimilarity(query, m.content) }));
+    scored = rest.map((m) => ({ m, s: memoryScore(m, textSimilarity(query, m.content)) }));
   }
 
   scored.sort((a, b) => b.s - a.s);
-  const threshold = 0.25;
-  const top = scored.filter((x) => x.s > threshold).slice(0, 8);
+  // decay lowers absolute scores, so keep the threshold lenient and rely on rank
+  const top = scored.filter((x) => x.s > 0.12).slice(0, 8);
   // fresh memories deserve a chance even below threshold
   const recent = rest
     .slice()
@@ -105,9 +118,10 @@ export async function retrieveMemories(
     .filter((m) => !top.some((t) => t.m.id === m.id));
 
   const result = [...pinned, ...top.map((x) => x.m), ...recent];
-  // bump hit counts (fire and forget)
+  // bump hit stats (fire and forget)
   const hit = result.map((m) => m.id);
   db.memories.where("id").anyOf(hit).modify((m) => {
+    m.lastHitAt = Date.now();
     m.hitCount = (m.hitCount || 0) + 1;
   }).catch(() => {});
   return result;

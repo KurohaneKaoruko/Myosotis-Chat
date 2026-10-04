@@ -10,7 +10,7 @@ const zhCN = {
   commonSave: "保存",
   commonDelete: "删除",
   commonClose: "关闭",
-} as const;
+};
 
 export default zhCN;
-export type Dict = typeof zhCN;
+export type Dict = Record<keyof typeof zhCN, string>;

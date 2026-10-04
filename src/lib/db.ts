@@ -58,8 +58,8 @@ export async function exportAll(): Promise<Blob> {
 export async function importAll(file: File): Promise<void> {
   const text = await file.text();
   const data = JSON.parse(text);
-  if (!data || !Array.isArray(data.agents)) throw new Error("不是有效的 Myosotis 备份文件");
-  await db.transaction("rw", db.providers, db.models, db.agents, db.conversations, db.messages, db.memories, async () => {
+  if (!data || !Array.isArray(data.agents)) throw new Error("Invalid Myosotis backup file");
+  await db.transaction("rw", [db.providers, db.models, db.agents, db.conversations, db.messages, db.memories], async () => {
     await db.providers.clear();
     await db.models.clear();
     await db.agents.clear();

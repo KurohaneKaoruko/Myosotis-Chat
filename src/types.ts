@@ -103,6 +103,10 @@ export interface MemoryItem {
   embedding: number[] | null;
   pinned: boolean;
   hitCount: number;
+  /** "global" memories are visible to every agent; default "agent" = private */
+  scope?: "agent" | "global";
+  /** last time retrieval injected this memory; drives decay scoring */
+  lastHitAt?: number;
   createdAt: number;
   updatedAt: number;
 }

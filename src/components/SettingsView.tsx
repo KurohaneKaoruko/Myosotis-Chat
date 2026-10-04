@@ -150,7 +150,7 @@ function ProvidersCard() {
                     confirmText: "删除",
                     danger: true,
                   })
-                  .then((ok) => ok && removeProvider(p.id));
+                  .then((ok) => { if (ok) removeProvider(p.id); });
               }}
             >
               <Icon name="trash" size={17} />
@@ -189,7 +189,7 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
   const placeholder =
     protocol === "openai" ? "https://api.openai.com/v1" : protocol === "anthropic" ? "https://api.anthropic.com" : "https://generativelanguage.googleapis.com";
 
-  const applyTemplate = (t: (typeof TEMPLATES)[number]) => {
+  const applyTemplate = (t: (typeof TEMPLATE_GROUPS)[number]["items"][number]) => {
     setProtocol(t.protocol);
     setBaseUrl(t.baseUrl);
     if (!name) setName(t.name);
@@ -697,7 +697,7 @@ function DataCard() {
                     confirmText: "覆盖导入",
                     danger: true,
                   })
-                  .then((ok) => ok && restore(f));
+                  .then((ok) => { if (ok) restore(f); });
               }
               e.target.value = "";
             }}
