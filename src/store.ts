@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { toast } from "sonner";
-import { setLanguage } from "./i18n";
+import { setLanguage, t, tf, dateLocale } from "./i18n";
 import { db, exportAll, importAll } from "./lib/db";
+import { mergeAgentConversations } from "./lib/migrate";
 import { chatComplete } from "./lib/api";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle } from "./lib/memory";
 import { uid, now, resolveModel, friendlyError, plainPreview } from "./lib/utils";
@@ -18,7 +19,7 @@ import {
   type Settings,
 } from "./types";
 
-export type View = "chat" | "agents" | "memory" | "settings";
+export type View = "chat" | "memory" | "settings";
 
 function sortConvos(list: Conversation[]): Conversation[] {
   return [...list].sort(
@@ -87,7 +88,7 @@ interface AppState {
   deleteAgent: (id: string) => Promise<void>;
 
   // ----- conversations -----
-  newConversation: (agentId: string) => Promise<string>;
+  openOrCreateConversation: (agentId: string) => Promise<string>;
   openConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   pinConversation: (id: string, pinned: boolean) => Promise<void>;
@@ -155,6 +156,13 @@ export const useStore = create<AppState>()(
       async init() {
         if (initStarted) return; // React StrictMode runs effects twice
         initStarted = true;
+        // one-time merge so every agent owns exactly one conversation
+        let convoRemap: Map<string, string> | null = null;
+        try {
+          convoRemap = await mergeAgentConversations();
+        } catch (e) {
+          console.error("[init] conversation merge migration failed:", e);
+        }
         let providers: Provider[] = [];
         let models: ModelConfig[] = [];
         let agents: Agent[] = [];
@@ -169,15 +177,18 @@ export const useStore = create<AppState>()(
           convos = sortConvos(convos);
         } catch (e) {
           console.error("[init] database error:", e);
-          get().showToast("本地数据库读取失败，部分数据可能不可用", "error");
+          get().showToast(t("dbReadFailed"), "error");
         }
         set({ providers, models, agents, convos, ready: true });
-        // restore last conversation
+        // restore last conversation; remap if it was merged away
         const last = get().activeConvoId;
-        if (last && convos.some((c) => c.id === last)) {
+        const target = last ? (convoRemap?.get(last) ?? last) : null;
+        if (target && convos.some((c) => c.id === target)) {
           try {
-            await get().openConversation(last);
+            await get().openConversation(target);
           } catch {}
+        } else if (convos[0]) {
+          await get().openConversation(convos[0].id);
         }
         // fire-and-forget scheduled auto backup (WebDAV)
         const wd = get().settings.webdav;
@@ -194,9 +205,9 @@ export const useStore = create<AppState>()(
               )
               .then((f) => {
                 localStorage.setItem("myosotis.lastAutoBackup", String(Date.now()));
-                get().showToast(`自动备份完成：${f}`, "success");
+                get().showToast(tf("autoBackupDone", { file: f }), "success");
               })
-              .catch((e) => get().showToast(`自动备份失败：${e?.message ?? e}`, "error"));
+              .catch((e) => get().showToast(tf("autoBackupFailed", { err: e?.message ?? e }), "error"));
           }
         }
       },
@@ -257,7 +268,7 @@ export const useStore = create<AppState>()(
           await db.conversations.update(convoId, patch);
           set((s) => ({ convos: s.convos.map((c) => (c.id === convoId ? { ...c, ...patch } : c)) }));
         }
-        get().showToast(`已删除 ${ids.length} 条消息`, "success");
+        get().showToast(tf("deletedNMsgs", { n: ids.length }), "success");
       },
 
       setSettings(patch) {
@@ -346,7 +357,7 @@ export const useStore = create<AppState>()(
       async createAgent() {
         const agent: Agent = {
           id: uid("agt"),
-          name: "新智能体",
+          name: t("newAgent"),
           emoji: "✨",
           hue: Math.floor(Math.random() * 360),
           persona: "",
@@ -385,13 +396,18 @@ export const useStore = create<AppState>()(
       },
 
       // -------------------------------------------------------
-      async newConversation(agentId) {
+      async openOrCreateConversation(agentId) {
         const agent = get().agents.find((a) => a.id === agentId);
         if (!agent) return "";
+        const existing = get().convos.find((c) => c.agentId === agentId);
+        if (existing) {
+          await get().openConversation(existing.id);
+          return existing.id;
+        }
         const convo: Conversation = {
           id: uid("cnv"),
           agentId,
-          title: "新对话",
+          title: t("newChat"),
           lastMessage: agent.greeting.trim() ? plainPreview(agent.greeting) : "",
           summary: "",
           summarizedUntil: 0,
@@ -453,12 +469,12 @@ export const useStore = create<AppState>()(
           summary: "",
           summarizedUntil: 0,
           lastMessage: "",
-          title: "新对话",
+          title: t("newChat"),
         });
         const agent = get().agents.find((a) => a.id === get().convos.find((c) => c.id === id)?.agentId);
         set({
           convos: get().convos.map((c) =>
-            c.id === id ? { ...c, summary: "", summarizedUntil: 0, lastMessage: "", title: "新对话" } : c
+            c.id === id ? { ...c, summary: "", summarizedUntil: 0, lastMessage: "", title: t("newChat") } : c
           ),
           messages: [],
         });
@@ -485,18 +501,18 @@ export const useStore = create<AppState>()(
         const agent = get().agents.find((a) => a.id === convo.agentId);
         const lines = [`# ${agent?.name ?? "AI"} · ${convo.title}`, ""];
         for (const m of msgs) {
-          const who = m.role === "user" ? get().settings.userName || "我" : agent?.name ?? "AI";
-          const time = new Date(m.createdAt).toLocaleString("zh-CN");
+          const who = m.role === "user" ? get().settings.userName || t("me") : agent?.name ?? "AI";
+          const time = new Date(m.createdAt).toLocaleString(dateLocale());
           lines.push(`**${who}** · ${time}`, "", m.content, "");
         }
         const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${convo.title || "对话"}.md`;
+        a.download = `${convo.title || t("convoFile")}.md`;
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        get().showToast("已导出为 Markdown", "success");
+        get().showToast(t("exportedMdDone"), "success");
       },
 
       // -------------------------------------------------------
@@ -532,7 +548,7 @@ export const useStore = create<AppState>()(
         const rm = hasImages ? (visionRm ?? chatRm) : chatRm;
         if (!rm) {
           set((s) => ({ messages: [...s.messages, userMsg] }));
-          get().showToast("还没有配置可用的对话模型，请先到「设置」添加模型", "error");
+          get().showToast(t("sendFirst"), "error");
           set({ view: "settings" });
           return;
         }
@@ -602,12 +618,12 @@ export const useStore = create<AppState>()(
         };
         await db.messages.add(aiMsg);
 
-        const isFirstReal = currentConvo.title === "新对话";
+        const isFirstReal = currentConvo.title === t("newChat");
         const patch: Partial<Conversation> = {
           updatedAt: now(),
           lastMessage: plainPreview(full).slice(0, 40) || "…",
         };
-        if (isFirstReal && trimmed) patch.title = plainPreview(trimmed).slice(0, 16) || "新对话";
+        if (isFirstReal && trimmed) patch.title = plainPreview(trimmed).slice(0, 16) || t("newChat");
         await db.conversations.update(convo.id, patch);
         const updatedConvo = { ...currentConvo, ...patch };
 
@@ -639,7 +655,7 @@ export const useStore = create<AppState>()(
           const recent = [...allMsgs, userMsg, aiMsg].slice(-14);
           extractMemories(agent, recent, chatRmForJobs, embeddingRm)
             .then((n) => {
-              if (n > 0) get().showToast(`小助手记住了 ${n} 条新记忆`, "success");
+              if (n > 0) get().showToast(tf("rememberedN", { n }), "success");
             })
             .catch(() => {});
         }
@@ -721,11 +737,11 @@ export const useStore = create<AppState>()(
         a.download = `myosotis-backup-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        get().showToast("备份已导出", "success");
+        get().showToast(t("backupExported"), "success");
       },
       async restore(file) {
         await importAll(file);
-        get().showToast("恢复完成，即将刷新", "success");
+        get().showToast(t("restoreDone"), "success");
         setTimeout(() => location.reload(), 900);
       },
     }),

@@ -1,11 +1,13 @@
 // Client-side encryption for backups: PBKDF2 -> AES-GCM-256 via Web Crypto.
 // The password never leaves the device; only ciphertext is uploaded.
 
+import { t } from "../i18n";
+
 const PBKDF2_ITERATIONS = 210_000;
 
 function subtle(): SubtleCrypto {
   if (typeof crypto === "undefined" || !crypto.subtle) {
-    throw new Error("当前环境不支持 Web Crypto，无法加密备份");
+    throw new Error(t("noWebCrypto"));
   }
   return crypto.subtle;
 }

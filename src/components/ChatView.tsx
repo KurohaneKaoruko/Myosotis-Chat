@@ -4,6 +4,7 @@ import { resolveModel } from "../lib/utils";
 import { Avatar, Icon, Menu, Modal, SelectBox, TipFor } from "./ui";
 import MessageBubble from "./MessageBubble";
 import Composer, { filesToDataUrls } from "./Composer";
+import { t, tf, dateLocale } from "../i18n";
 import type { ChatMessage } from "../types";
 
 function isSameDay(a: number, b: number): boolean {
@@ -15,11 +16,11 @@ function isSameDay(a: number, b: number): boolean {
 function dateLabel(ts: number): string {
   const d = new Date(ts);
   const today = new Date();
-  if (isSameDay(ts, today.getTime())) return "今天";
+  if (isSameDay(ts, today.getTime())) return t("today");
   const yesterday = new Date(today.getTime() - 86400000);
-  if (isSameDay(ts, yesterday.getTime())) return "昨天";
+  if (isSameDay(ts, yesterday.getTime())) return t("yesterday");
   const sameYear = d.getFullYear() === today.getFullYear();
-  return d.toLocaleDateString("zh-CN", sameYear ? { month: "long", day: "numeric" } : { year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString(dateLocale(), sameYear ? { month: "long", day: "numeric" } : { year: "numeric", month: "long", day: "numeric" });
 }
 
 export default function ChatView() {
@@ -34,11 +35,9 @@ export default function ChatView() {
   const settings = useStore((s) => s.settings);
   const setSidebar = useStore((s) => s.setSidebar);
   const setEditing = useStore((s) => s.setEditingAgentId);
-  const newConversation = useStore((s) => s.newConversation);
   const send = useStore((s) => s.send);
   const clearConversation = useStore((s) => s.clearConversation);
   const exportConversation = useStore((s) => s.exportConversation);
-  const deleteConversation = useStore((s) => s.deleteConversation);
   const updateAgent = useStore((s) => s.updateAgent);
   const addPendingImages = useStore((s) => s.addPendingImages);
   const multiSelectActive = useStore((s) => s.multiSelectActive);
@@ -115,17 +114,17 @@ export default function ChatView() {
     return (
       <div className="empty-chat">
         <div className="big">🌸</div>
-        <div className="t">{noAgents ? "还没有智能体" : "选择一个对话，开始聊天"}</div>
+        <div className="t">{noAgents ? t("noAgentsTitle") : t("pickConversation")}</div>
         <div style={{ fontSize: 13, marginBottom: 18 }}>
           {noAgents
-            ? "先创建一个属于你的智能体吧"
+            ? t("noAgentsDesc")
             : window.innerWidth <= 768
-              ? "点击底部「聊天」标签查看对话"
-              : "从左侧列表中选择"}
+              ? t("pickMobile")
+              : t("pickDesktop")}
         </div>
         {noAgents && (
           <button className="btn primary" onClick={() => useStore.getState().createAgent()}>
-            创建智能体
+            {t("createAgent")}
           </button>
         )}
       </div>
@@ -145,7 +144,7 @@ export default function ChatView() {
   return (
     <>
       <header className="chat-head">
-        <button className="back" onClick={() => setSidebar(true)} title="对话列表">
+        <button className="back" onClick={() => setSidebar(true)} title={t("convoList")}>
           <Icon name="back" />
         </button>
         <Avatar agent={agent} size={38} radius={12} />
@@ -155,7 +154,7 @@ export default function ChatView() {
             <Menu
               align="start"
               trigger={
-                <button className="model-switch" title="切换对话模型">
+                <button className="model-switch" title={t("switchModel")}>
                   <span className="sub">{chatRm.model.label}</span>
                   <Icon name="down" size={11} />
                 </button>
@@ -169,7 +168,7 @@ export default function ChatView() {
                 ...(chatModels.length > 1
                   ? ([
                       "separator",
-                      { label: "在设置中管理模型", icon: "settings" as const, onClick: () => useStore.getState().setView("settings") },
+                      { label: t("manageModelsInSettings"), icon: "settings" as const, onClick: () => useStore.getState().setView("settings") },
                     ] as const)
                   : []),
               ]}
@@ -179,14 +178,14 @@ export default function ChatView() {
               className="sub"
               style={{ color: "#f59e0b", cursor: "pointer" }}
               onClick={() => useStore.getState().setView("settings")}
-              title="点击前往设置"
+              title={t("goSettings")}
             >
-              ⚠ 未配置模型 · 点击设置
+              {t("unconfiguredModel")}
             </div>
           )}
         </div>
         <div className="spacer" />
-        <TipFor text="搜索对话">
+        <TipFor text={t("searchTip")}>
           <button
             className={`icon-btn ${searchOpen ? "active" : ""}`}
             onClick={() => {
@@ -197,56 +196,35 @@ export default function ChatView() {
             <Icon name="search" />
           </button>
         </TipFor>
-        <TipFor text="开始新对话">
-          <button className="icon-btn" onClick={() => newConversation(agent.id)}>
-            <Icon name="plus" />
-          </button>
-        </TipFor>
-        <TipFor text="智能体设定">
+        <TipFor text={t("agentSettingsTip")}>
           <button className="icon-btn" onClick={() => setEditing(agent.id)}>
             <Icon name="edit" />
           </button>
         </TipFor>
         <Menu
           trigger={
-            <button className="icon-btn" title="更多">
+            <button className="icon-btn" title={t("moreTip")}>
               <Icon name="dots" />
             </button>
           }
           items={[
-            { label: "导出为 Markdown", icon: "download", onClick: () => exportConversation(convo.id) },
-            { label: "查看记忆摘要", icon: "book", onClick: () => setShowSummary(true) },
-            { label: "多选消息", icon: "check", onClick: () => enterMultiSelect() },
+            { label: t("exportMd"), icon: "download", onClick: () => exportConversation(convo.id) },
+            { label: t("viewSummary"), icon: "book", onClick: () => setShowSummary(true) },
+            { label: t("multiSelect"), icon: "check", onClick: () => enterMultiSelect() },
             {
-              label: "清空对话（保留记忆）",
+              label: t("clearChat"),
               icon: "broom",
-              onClick: () => {
-                useStore
-                  .getState()
-                  .askConfirm({
-                    title: "清空对话",
-                    message: "清空这段对话的所有消息？\n智能体的长期记忆不受影响，清空后将从开场白重新开始。",
-                    confirmText: "清空",
-                    danger: true,
-                  })
-                  .then((ok) => { if (ok) clearConversation(convo.id); });
-              },
-            },
-            "separator",
-            {
-              label: "删除对话",
-              icon: "trash",
               danger: true,
               onClick: () => {
                 useStore
                   .getState()
                   .askConfirm({
-                    title: "删除对话",
-                    message: `删除与「${agent.name}」的这段对话？\n智能体的长期记忆不受影响。`,
-                    confirmText: "删除",
+                    title: t("clearChat"),
+                    message: t("clearChatMsg"),
+                    confirmText: t("clear"),
                     danger: true,
                   })
-                  .then((ok) => { if (ok) deleteConversation(convo.id); });
+                  .then((ok) => { if (ok) clearConversation(convo.id); });
               },
             },
           ]}
@@ -263,7 +241,7 @@ export default function ChatView() {
               setQuery(e.target.value);
               setMatchIdx(0);
             }}
-            placeholder="在当前对话中搜索…"
+            placeholder={t("searchInConvo")}
             onKeyDown={(e) => {
               if (e.key === "Enter") gotoMatch(e.shiftKey ? -1 : 1);
               if (e.key === "Escape") {
@@ -275,10 +253,10 @@ export default function ChatView() {
           <span className="search-count">
             {q ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ""}
           </span>
-          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(-1)} title="上一个">
+          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(-1)} title={t("searchPrev")}>
             <Icon name="back" size={14} />
           </button>
-          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(1)} title="下一个">
+          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(1)} title={t("searchNext")}>
             <Icon name="down" size={14} />
           </button>
           <button
@@ -288,7 +266,7 @@ export default function ChatView() {
               setSearchOpen(false);
               setQuery("");
             }}
-            title="关闭"
+            title={t("commonClose")}
           >
             <Icon name="x" size={14} />
           </button>
@@ -314,7 +292,7 @@ export default function ChatView() {
       >
         {dragging && (
           <div className="drop-mask">
-            <div className="drop-inner">🖼️ 松开发送图片</div>
+            <div className="drop-inner">{t("dropToSend")}</div>
           </div>
         )}
         <div className="msg-list">
@@ -367,7 +345,7 @@ export default function ChatView() {
           )}
         </div>
         {showJump && !isStreamingHere && (
-          <button className="jump-btn" onClick={jumpToBottom} title="回到底部">
+          <button className="jump-btn" onClick={jumpToBottom} title={t("jumpBottom")}>
             <Icon name="down" size={17} />
           </button>
         )}
@@ -378,11 +356,11 @@ export default function ChatView() {
       {multiSelectActive && (
         <div className="multiselect-bar">
           <span>
-            已选 <b>{multiSelectIds.length}</b> 条
+            {tf("selectedN", { n: multiSelectIds.length })}
           </span>
           <div style={{ flex: 1 }} />
           <button className="btn sm ghost" onClick={exitMultiSelect}>
-            取消
+            {t("commonCancel")}
           </button>
           <button
             className="btn sm danger"
@@ -391,27 +369,27 @@ export default function ChatView() {
               useStore
                 .getState()
                 .askConfirm({
-                  title: "批量删除",
-                  message: `删除选中的 ${multiSelectIds.length} 条消息？\n智能体的长期记忆不受影响。`,
-                  confirmText: "删除",
+                  title: t("batchDeleteTitle"),
+                  message: tf("batchDeleteMsg", { n: multiSelectIds.length }),
+                  confirmText: t("commonDelete"),
                   danger: true,
                 })
                 .then((ok) => { if (ok) deleteSelected(); });
             }}
           >
-            删除所选
+            {t("deleteSelected")}
           </button>
         </div>
       )}
 
       {showSummary && (
-        <Modal title="本对话的记忆摘要" onClose={() => setShowSummary(false)}>
+        <Modal title={t("summaryTitle")} onClose={() => setShowSummary(false)}>
           <div className="summary-body">
             {convo.summary.trim() ? (
               convo.summary
             ) : (
               <span style={{ color: "var(--text-3)" }}>
-                暂无摘要。对话进行一段时间后（约 20 轮以上），系统会自动把较早的内容压缩成摘要，作为智能体的记忆。
+                {t("summaryEmpty")}
               </span>
             )}
           </div>

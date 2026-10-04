@@ -6,6 +6,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import * as Slider from "@radix-ui/react-slider";
 import type { Agent } from "../types";
+import { t } from "../i18n";
 
 // ============================================================
 // Tiny icon set (stroke style, consistent 24x24 grid)
@@ -209,7 +210,7 @@ export function Modal({
         <Dialog.Content className="modal" onInteractOutside={(e) => e.preventDefault()}>
           <div className="modal-head">
             <Dialog.Title>{title}</Dialog.Title>
-            <button className="icon-btn" onClick={onClose} aria-label="关闭">
+            <button className="icon-btn" onClick={onClose} aria-label={t("commonClose")}>
               <Icon name="x" />
             </button>
           </div>
@@ -228,7 +229,7 @@ export function PromptModal({
   initial,
   onConfirm,
   onClose,
-  confirmText = "确定",
+  confirmText = t("commonConfirm"),
 }: {
   title: string;
   label: string;
@@ -240,7 +241,7 @@ export function PromptModal({
   return (
     <Modal title={title} onClose={onClose} footer={
       <>
-        <button className="btn ghost" onClick={onClose}>取消</button>
+        <button className="btn ghost" onClick={onClose}>{t("commonCancel")}</button>
         <button className="btn primary" onClick={() => onConfirm((document.getElementById("prompt-input") as HTMLInputElement)?.value ?? "")}>
           {confirmText}
         </button>
@@ -275,14 +276,14 @@ export function ConfirmHost({
           </Dialog.Description>
           <div className="modal-foot">
             <button className="btn ghost" onClick={() => onResolve(false)}>
-              取消
+              {t("commonCancel")}
             </button>
             <button
               className={`btn ${options.danger ? "danger confirm-danger" : "primary"}`}
               autoFocus
               onClick={() => onResolve(true)}
             >
-              {options.confirmText ?? "确定"}
+              {options.confirmText ?? t("commonConfirm")}
             </button>
           </div>
         </Dialog.Content>
@@ -346,7 +347,7 @@ export function SelectBox({
   value,
   onChange,
   options,
-  placeholder = "请选择",
+  placeholder = t("pleaseSelect"),
   style,
 }: {
   value: string | null;

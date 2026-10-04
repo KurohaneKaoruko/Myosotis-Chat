@@ -3,6 +3,7 @@
 
 import type { Provider } from "../types";
 import { trimUrl } from "./utils";
+import { t, tf } from "../i18n";
 
 export interface WebDavConfig {
   url: string; // e.g. https://dav.jianguoyun.com/dav/
@@ -40,11 +41,11 @@ export async function davMkdir(cfg: WebDavConfig, dir: string): Promise<void> {
       headers: authHeader(cfg),
     });
     if (!res.ok && res.status !== 405) {
-      throw new WebDavError(`创建目录失败 (${res.status})`, res.status);
+      throw new WebDavError(tf("davMkcolFail", { s: res.status }), res.status);
     }
   } catch (e) {
     if (e instanceof WebDavError) throw e;
-    throw new WebDavError("无法连接 WebDAV 服务器");
+    throw new WebDavError(t("davConnFail"));
   }
 }
 
@@ -55,7 +56,7 @@ export async function davPut(cfg: WebDavConfig, path: string, content: string): 
     body: content,
   });
   if (!res.ok) {
-    throw new WebDavError(`上传失败 (${res.status})`, res.status);
+    throw new WebDavError(tf("davUploadFail", { s: res.status }), res.status);
   }
 }
 
@@ -64,8 +65,8 @@ export async function davGet(cfg: WebDavConfig, path: string): Promise<string> {
     method: "GET",
     headers: authHeader(cfg),
   });
-  if (res.status === 404) throw new WebDavError("备份文件不存在 (404)", 404);
-  if (!res.ok) throw new WebDavError(`下载失败 (${res.status})`, res.status);
+  if (res.status === 404) throw new WebDavError(t("davNotFound"), 404);
+  if (!res.ok) throw new WebDavError(tf("davDownloadFail", { s: res.status }), res.status);
   return res.text();
 }
 
@@ -113,7 +114,7 @@ export async function davList(cfg: WebDavConfig, dir: string): Promise<DavEntry[
     body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
   });
   if (!res.ok) {
-    throw new WebDavError(`列取目录失败 (${res.status})`, res.status);
+    throw new WebDavError(tf("davListFail", { s: res.status }), res.status);
   }
   const xml = await res.text();
   return parsePropfind(xml).filter((e) => e.name.endsWith(".json"));

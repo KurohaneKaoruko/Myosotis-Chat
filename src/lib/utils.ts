@@ -1,5 +1,5 @@
 import type { ModelRole, ModelConfig, Provider, ResolvedModel, Settings } from "../types";
-import { getLanguage } from "../i18n";
+import { getLanguage, t } from "../i18n";
 
 export function uid(prefix = ""): string {
   const core =
@@ -33,7 +33,7 @@ export function formatTime(ts: number): string {
     d.getFullYear() === yesterday.getFullYear() &&
     d.getMonth() === yesterday.getMonth() &&
     d.getDate() === yesterday.getDate();
-  if (isYesterday) return getLanguage() === "en" ? "Yesterday" : "昨天";
+  if (isYesterday) return t("yesterday");
   if (d.getFullYear() === today.getFullYear()) {
     return d.toLocaleDateString(locale, { month: "numeric", day: "numeric" });
   }
@@ -81,16 +81,14 @@ export function resolveModel(
 
 /** Human friendly error text from a failed API call. */
 export function friendlyError(e: unknown): string {
-  if (e == null) return "未知错误";
+  if (e == null) return t("errUnknown");
   const msg = String((e as any)?.message ?? e);
-  if (/Failed to fetch|NetworkError|network/i.test(msg)) {
-    return "网络连接失败：请检查网络、接口地址是否正确，以及该服务是否支持浏览器直连（CORS）";
-  }
-  if (/\b401\b|invalid.*key|incorrect.*api/i.test(msg)) return "鉴权失败（401）：API Key 无效或已过期";
-  if (/\b403\b/i.test(msg)) return "无权限（403）：该 Key 没有访问此模型的权限";
-  if (/\b404\b/i.test(msg)) return "接口不存在（404）：请检查 Base URL 和模型名称";
-  if (/\b429\b|rate.?limit/i.test(msg)) return "请求太频繁（429）：稍等片刻再试，或检查账号额度";
-  if (/insufficient|quota|余额/i.test(msg)) return "账户余额不足，请前往服务商控制台充值";
+  if (/Failed to fetch|NetworkError|network/i.test(msg)) return t("errNetwork");
+  if (/\b401\b|invalid.*key|incorrect.*api/i.test(msg)) return t("err401");
+  if (/\b403\b/i.test(msg)) return t("err403");
+  if (/\b404\b/i.test(msg)) return t("err404");
+  if (/\b429\b|rate.?limit/i.test(msg)) return t("err429");
+  if (/insufficient|quota|余额/i.test(msg)) return t("errQuota");
   return msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
 }
 
@@ -128,8 +126,8 @@ export function textSimilarity(a: string, b: string): number {
 /** Strip markdown syntax for previews in the conversation list. */
 export function plainPreview(md: string): string {
   return (md || "")
-    .replace(/```[\s\S]*?```/g, " [代码] ")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " [图片] ")
+    .replace(/```[\s\S]*?```/g, t("previewCode"))
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, t("previewImage"))
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/[*_#>`~]/g, "")
     .replace(/\s+/g, " ")

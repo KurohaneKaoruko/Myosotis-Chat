@@ -4,10 +4,23 @@ import { useStore } from "../store";
 import { db } from "../lib/db";
 import { MEMORY_KINDS, type MemoryItem, type MemoryKind } from "../types";
 import { Modal, Icon, SelectBox } from "./ui";
+import { t, tf } from "../i18n";
 
 type CleanupCandidate = MemoryItem & { __ageDays: number };
 
 const CLEANUP_DAYS = 90;
+
+const KIND_LABEL_KEYS = {
+  fact: "kindFact",
+  preference: "kindPreference",
+  event: "kindEvent",
+  relationship: "kindRelationship",
+  goal: "kindGoal",
+} as const;
+
+function kindLabel(k: MemoryKind): string {
+  return t(KIND_LABEL_KEYS[k]);
+}
 
 function isCleanupCandidate(m: MemoryItem): boolean {
   const last = m.lastHitAt ?? m.createdAt;
@@ -52,13 +65,13 @@ export default function MemoryView() {
   const toggleScope = (m: MemoryItem) => {
     const next = m.scope === "global" ? "agent" : "global";
     useStore.getState().updateMemory(m.id, { scope: next });
-    showToast(next === "global" ? "已设为全局记忆（所有智能体可见）" : "已设为私有记忆", "success");
+    showToast(next === "global" ? t("globalSetToast") : t("privateSetToast"), "success");
   };
 
   const exportMemories = async () => {
     const items = filter === "all" ? all : all.filter((m) => m.agentId === filter);
     if (!items.length) {
-      showToast("没有可导出的记忆", "error");
+      showToast(t("nothingToExport"), "error");
       return;
     }
     const payload = {
@@ -74,7 +87,7 @@ export default function MemoryView() {
     a.download = `myosotis-memories-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast(`已导出 ${items.length} 条记忆`, "success");
+    showToast(tf("exportDone", { n: items.length }), "success");
   };
 
   const importMemories = async (file: File) => {
@@ -113,9 +126,9 @@ export default function MemoryView() {
         });
         added++;
       }
-      showToast(`导入完成：新增 ${added} 条，跳过重复/无效 ${skipped} 条`, "success");
+      showToast(tf("importDone", { added, skipped }), "success");
     } catch {
-      showToast("导入失败：文件格式不正确，已有记忆未受影响", "error");
+      showToast(t("importFail"), "error");
     }
   };
 
@@ -123,24 +136,25 @@ export default function MemoryView() {
     <div className="page">
       <div className="page-inner">
         <div className="page-title">
-          记忆花园
+          {t("memoryTitle")}
           <span className="desc" style={{ fontWeight: 400 }}>
-            智能体们记住的一切，尽收眼底
+            {t("memoryDesc")}
           </span>
         </div>
 
         <div className="card" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: 28 }}>🌸</div>
           <div style={{ fontSize: 13, color: "var(--text-2)", flex: 1, minWidth: 200 }}>
-            智能体会自动从对话中记住你的喜好、经历与约定。每条记忆都可以修改、置顶或删除——
-            <b>你对自己的信息拥有完全的控制权</b>。配置「记忆检索模型」后，回忆会找得更准。
+            {t("memoryIntro")}
+            <b>{t("memoryControl")}</b>
+            {t("memoryAccuracy")}
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn sm" onClick={exportMemories} title="导出为 JSON">
-              <Icon name="download" size={14} /> 导出
+            <button className="btn sm" onClick={exportMemories} title={t("exportJsonTip")}>
+              <Icon name="download" size={14} /> {t("memExport")}
             </button>
-            <label className="btn sm" style={{ cursor: "pointer" }} title="从 JSON 导入">
-              <Icon name="upload" size={14} /> 导入
+            <label className="btn sm" style={{ cursor: "pointer" }} title={t("importJsonTip")}>
+              <Icon name="upload" size={14} /> {t("memImport")}
               <input
                 type="file"
                 accept="application/json"
@@ -159,10 +173,10 @@ export default function MemoryView() {
                 setCleanupIds([]);
               }}
             >
-              <Icon name="broom" size={14} /> 清理候选
+              <Icon name="broom" size={14} /> {t("cleanup")}
             </button>
             <button className="btn primary sm" onClick={() => setEditing("new")}>
-              <Icon name="plus" size={14} /> 手动添加
+              <Icon name="plus" size={14} /> {t("manualAdd")}
             </button>
           </div>
         </div>
@@ -171,11 +185,11 @@ export default function MemoryView() {
           <>
             <div className="search-box" style={{ margin: 0 }}>
               <Icon name="search" size={15} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索记忆内容…" />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("memorySearchPh")} />
             </div>
             <div className="chips">
               <button className={`chip ${filter === "all" ? "on" : ""}`} onClick={() => setFilter("all")}>
-                全部智能体
+                {t("allAgents")}
               </button>
               {agents.map((a) => (
                 <button key={a.id} className={`chip ${filter === a.id ? "on" : ""}`} onClick={() => setFilter(a.id)}>
@@ -185,7 +199,7 @@ export default function MemoryView() {
             </div>
             <div className="chips">
               <button className={`chip ${kindFilter === "all" ? "on" : ""}`} onClick={() => setKindFilter("all")}>
-                全部类型
+                {t("allKinds")}
               </button>
               {MEMORY_KINDS.map((k) => (
                 <button
@@ -193,7 +207,7 @@ export default function MemoryView() {
                   className={`chip ${kindFilter === k.id ? "on" : ""}`}
                   onClick={() => setKindFilter(kindFilter === k.id ? "all" : k.id)}
                 >
-                  {k.icon} {k.label}
+                  {k.icon} {kindLabel(k.id)}
                 </button>
               ))}
               <span style={{ width: 8 }} />
@@ -203,7 +217,7 @@ export default function MemoryView() {
                   className={`chip ${minImportance === n ? "on" : ""}`}
                   onClick={() => setMinImportance(n)}
                 >
-                  {n === 0 ? "任意重要度" : `★≥${n}`}
+                  {n === 0 ? t("anyImportance") : `★≥${n}`}
                 </button>
               ))}
             </div>
@@ -213,41 +227,41 @@ export default function MemoryView() {
         {cleanupMode && (
           <div className="card" style={{ borderColor: "var(--danger)" }}>
             <h3 style={{ color: "var(--danger)" }}>
-              <Icon name="broom" size={16} /> 清理候选（{list.length} 条）
+              <Icon name="broom" size={16} /> {tf("cleanupCount", { n: list.length })}
             </h3>
             <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 10 }}>
-              以下记忆超过 {CLEANUP_DAYS} 天未被想起且重要度 ≤2。删除需确认， pinned 记忆不会出现。
+              {tf("cleanupDesc", { days: CLEANUP_DAYS })}
             </div>
             <div className="chips" style={{ marginBottom: 8 }}>
               <button className="chip" onClick={() => setCleanupIds(list.map((m) => m.id))}>
-                全选
+                {t("selectAll")}
               </button>
               <button className="chip" onClick={() => setCleanupIds([])}>
-                清空选择
+                {t("clearSelection")}
               </button>
               <button
                 className="btn sm danger"
                 disabled={!cleanupIds.length}
                 onClick={() => {
                   askConfirm({
-                    title: "批量删除记忆",
-                    message: `确定删除选中的 ${cleanupIds.length} 条低价值记忆？此操作不可恢复。`,
-                    confirmText: "删除",
+                    title: t("batchDeleteMemTitle"),
+                    message: tf("batchDeleteMemMsg", { n: cleanupIds.length }),
+                    confirmText: t("commonDelete"),
                     danger: true,
                   }).then(async (ok) => {
                     if (!ok) return;
                     await db.memories.bulkDelete(cleanupIds);
                     setCleanupIds([]);
-                    showToast("清理完成", "success");
+                    showToast(t("cleanupDone"), "success");
                   });
                 }}
               >
-                删除所选（{cleanupIds.length}）
+                {tf("deleteSelectedN", { n: cleanupIds.length })}
               </button>
             </div>
             {list.length === 0 && (
               <div className="mem-empty" style={{ padding: "20px 0" }}>
-                🌿 没有需要清理的记忆，花园很干净。
+                {t("cleanupEmpty")}
               </div>
             )}
           </div>
@@ -256,7 +270,7 @@ export default function MemoryView() {
         {list.length === 0 && !cleanupMode ? (
           <div className="mem-empty">
             <div style={{ fontSize: 40, marginBottom: 8 }}>🌱</div>
-            还没有匹配的记忆。多和你的智能体聊聊，或手动种下一颗种子。
+            {t("memoryEmpty")}
           </div>
         ) : (
           list.map((m) => {
@@ -274,45 +288,45 @@ export default function MemoryView() {
                 <div className="bd">
                   <div className="tx">{m.content}</div>
                   <div className="ft">
-                    <span className="kind">{kindInfo(m.kind).label}</span>
+                    <span className="kind">{kindLabel(m.kind)}</span>
                     <span className="imp">{"★".repeat(m.importance)}</span>
                     {agent && (
                       <span>
                         {agent.emoji} {agent.name}
                       </span>
                     )}
-                    {m.scope === "global" && <span className="kind">🌐 全局</span>}
-                    <span>{m.lastHitAt ? `${ageDays} 天前想起` : "从未想起"}</span>
+                    {m.scope === "global" && <span className="kind">{t("globalBadge")}</span>}
+                    <span>{m.lastHitAt ? tf("daysSinceHit", { days: ageDays }) : t("neverRecalled")}</span>
                   </div>
                 </div>
                 {!cleanupMode && (
                   <div className="ops">
                     <button
                       className="icon-btn"
-                      title={m.pinned ? "取消置顶" : "置顶（永远记住）"}
+                      title={m.pinned ? t("pinOff") : t("pinMemTip")}
                       onClick={() => useStore.getState().updateMemory(m.id, { pinned: !m.pinned })}
                     >
                       <Icon name="pin" size={15} />
                     </button>
                     <button
                       className="icon-btn"
-                      title={m.scope === "global" ? "改为私有" : "设为全局（所有智能体可见）"}
+                      title={m.scope === "global" ? t("scopeToggleGlobal") : t("scopeTogglePrivate")}
                       onClick={() => toggleScope(m)}
                       style={{ fontSize: 13, fontWeight: 700 }}
                     >
                       {m.scope === "global" ? "🌐" : "🔒"}
                     </button>
-                    <button className="icon-btn" title="编辑" onClick={() => setEditing(m)}>
+                    <button className="icon-btn" title={t("editMsg")} onClick={() => setEditing(m)}>
                       <Icon name="edit" size={15} />
                     </button>
                     <button
                       className="icon-btn danger"
-                      title="忘记"
+                      title={t("forget")}
                       onClick={() => {
                         askConfirm({
-                          title: "忘掉这条记忆",
-                          message: `让智能体忘掉：\n「${m.content.slice(0, 60)}」？`,
-                          confirmText: "忘掉",
+                          title: t("forgetMemTitle"),
+                          message: tf("forgetMemMsg", { content: m.content.slice(0, 60) }),
+                          confirmText: t("forget"),
                           danger: true,
                         }).then((ok) => {
                           if (ok) useStore.getState().deleteMemory(m.id);
@@ -383,67 +397,67 @@ function MemoryEditor({
 
   return (
     <Modal
-      title={memory ? "编辑记忆" : "种下一颗记忆"}
+      title={memory ? t("memEditorTitle") : t("memNewTitle")}
       onClose={onClose}
       footer={
         <>
           <button className="btn ghost" onClick={onClose}>
-            取消
+            {t("commonCancel")}
           </button>
           <button className="btn primary" onClick={save}>
-            保存
+            {t("commonSave")}
           </button>
         </>
       }
     >
       <div className="field">
-        <label>内容</label>
+        <label>{t("memContent")}</label>
         <textarea
           className="input"
           rows={3}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="如：用户养了一只叫「团子」的橘猫"
+          placeholder={t("memContentPh")}
           autoFocus
         />
       </div>
       <div className="field">
-        <label>属于哪个智能体</label>
+        <label>{t("memBelongsTo")}</label>
         <SelectBox
           value={agentId || null}
           onChange={(v) => setAgentId(v ?? "")}
           options={agents.map((a) => ({ value: a.id, label: `${a.emoji} ${a.name}` }))}
-          placeholder="选择智能体"
+          placeholder={t("pickAgent")}
         />
       </div>
       <div className="field">
-        <label>作用域</label>
+        <label>{t("memScope")}</label>
         <div className="chips">
           <button className={`chip ${scope === "agent" ? "on" : ""}`} onClick={() => setScope("agent")}>
-            🔒 仅该智能体
+            {t("scopePrivate")}
           </button>
           <button className={`chip ${scope === "global" ? "on" : ""}`} onClick={() => setScope("global")}>
-            🌐 全局共享
+            {t("scopeGlobal")}
           </button>
         </div>
       </div>
       <div className="row">
         <div className="field">
-          <label>类型</label>
+          <label>{t("memKind")}</label>
           <SelectBox
             value={kind}
             onChange={(v) => setKind((v ?? "fact") as MemoryKind)}
-            options={MEMORY_KINDS.map((k) => ({ value: k.id, label: `${k.icon} ${k.label}` }))}
-            placeholder="类型"
+            options={MEMORY_KINDS.map((k) => ({ value: k.id, label: `${k.icon} ${kindLabel(k.id)}` }))}
+            placeholder={t("memKind")}
           />
         </div>
         <div className="field">
-          <label>重要度</label>
+          <label>{t("memImportance")}</label>
           <SelectBox
             value={importance}
             onChange={(v) => setImportance(v ?? "3")}
             options={[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: `${"★".repeat(n)}（${n}）` }))}
-            placeholder="重要度"
+            placeholder={t("memImportance")}
           />
         </div>
       </div>

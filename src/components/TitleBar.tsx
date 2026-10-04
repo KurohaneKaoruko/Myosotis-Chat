@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauri } from "../lib/utils";
+import { t } from "../i18n";
 
 /**
  * Frameless window title bar (desktop Tauri only).
@@ -42,12 +43,12 @@ export default function TitleBar() {
         <span data-tauri-drag-region>Myosotis</span>
       </div>
       <div className="tb-actions">
-        <button className="tb-btn" title="最小化" onClick={() => win.minimize()}>
+        <button className="tb-btn" title={t("winMinimize")} onClick={() => win.minimize()}>
           <svg width="11" height="11" viewBox="0 0 11 11">
             <path d="M1.5 5.5h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
           </svg>
         </button>
-        <button className="tb-btn" title={maximized ? "还原" : "最大化"} onClick={() => win.toggleMaximize()}>
+        <button className="tb-btn" title={maximized ? t("winRestore") : t("winMaximize")} onClick={() => win.toggleMaximize()}>
           {maximized ? (
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.1">
               <path d="M2.5 4V2.5h4M8.5 7v1.5h-4" strokeLinecap="round" />
@@ -60,7 +61,7 @@ export default function TitleBar() {
             </svg>
           )}
         </button>
-        <button className="tb-btn tb-close" title="关闭" onClick={() => win.close()}>
+        <button className="tb-btn tb-close" title={t("commonClose")} onClick={() => win.close()}>
           <svg width="11" height="11" viewBox="0 0 11 11">
             <path d="M1.8 1.8l7.4 7.4M9.2 1.8L1.8 9.2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
           </svg>

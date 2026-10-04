@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store";
 import { Modal, Icon, SelectBox, Toggle } from "./ui";
 import { AGENT_PRESETS, type Agent } from "../types";
+import { t, tf } from "../i18n";
 
 const EMOJIS = [
   "🌸","🌺","🌻","🌷","🌹","🪻","🐱","🐶","🦊","🐰","🐻","🐼","🐨","🦁","🐯","🐹",
@@ -22,7 +23,7 @@ function EditorBody({ agentId }: { agentId: string }) {
   const updateAgent = useStore((s) => s.updateAgent);
   const deleteAgent = useStore((s) => s.deleteAgent);
   const setEditingAgentId = useStore((s) => s.setEditingAgentId);
-  const newConversation = useStore((s) => s.newConversation);
+  const openOrCreateConversation = useStore((s) => s.openOrCreateConversation);
   const showToast = useStore((s) => s.showToast);
 
   const agent = agents.find((a) => a.id === agentId);
@@ -31,7 +32,7 @@ function EditorBody({ agentId }: { agentId: string }) {
   const [showEmoji, setShowEmoji] = useState(false);
 
   if (!agent) return null;
-  const isNew = agent.name === "新智能体" && !agent.persona;
+  const isNew = agent.name === t("newAgent") && !agent.persona;
   const set = (patch: Partial<Agent>) => setForm((f) => ({ ...f, ...patch }));
 
   const applyPreset = (p: (typeof AGENT_PRESETS)[number]) => {
@@ -44,12 +45,12 @@ function EditorBody({ agentId }: { agentId: string }) {
       suggestions: p.suggestions,
     });
     setSuggText(p.suggestions.join("\n"));
-    showToast(`已套用「${p.name}」模板，可继续修改`, "success");
+    showToast(tf("presetApplied", { name: p.name }), "success");
   };
 
   const save = async () => {
-    if (!form.name?.trim() || form.name === "新智能体") {
-      showToast("先给智能体起个名字吧", "error");
+    if (!form.name?.trim() || form.name === t("newAgent")) {
+      showToast(t("nameRequired"), "error");
       return;
     }
     const suggestions = suggText
@@ -59,7 +60,9 @@ function EditorBody({ agentId }: { agentId: string }) {
       .slice(0, 6);
     await updateAgent(agent.id, { ...form, name: form.name.trim(), suggestions });
     setEditingAgentId(null);
-    showToast("已保存", "success");
+    // chat-app flow: saving (new or existing) lands in the agent's single conversation
+    await openOrCreateConversation(agent.id);
+    showToast(t("saved"), "success");
   };
 
   const chatModels = models.filter((m) => m.roles.includes("chat"));
@@ -75,14 +78,14 @@ function EditorBody({ agentId }: { agentId: string }) {
           value: m.id,
           label: `${m.label}（${providers.find((p) => p.id === m.providerId)?.name ?? "?"}）`,
         }))}
-        placeholder="跟随全局默认"
+        placeholder={t("followGlobal")}
       />
     </div>
   );
 
   return (
     <Modal
-      title="智能体设定"
+      title={t("editorTitle")}
       onClose={() => setEditingAgentId(null)}
       footer={
         <>
@@ -92,34 +95,25 @@ function EditorBody({ agentId }: { agentId: string }) {
               useStore
                 .getState()
                 .askConfirm({
-                  title: "删除智能体",
-                  message: `确定删除「${agent.name}」？\n其全部对话与记忆也会一并删除，此操作不可恢复。`,
-                  confirmText: "删除",
+                  title: t("deleteAgentTitle"),
+                  message: tf("deleteAgentMsg", { name: agent.name }),
+                  confirmText: t("commonDelete"),
                   danger: true,
                 })
                 .then((ok) => { if (ok) deleteAgent(agent.id); });
             }}
           >
-            删除
-          </button>
-          <button
-            className="btn ghost"
-            onClick={async () => {
-              await save();
-              newConversation(agent.id);
-            }}
-          >
-            保存并开聊
+            {t("delete")}
           </button>
           <button className="btn primary" onClick={save}>
-            保存
+            {t("commonSave")}
           </button>
         </>
       }
     >
       {isNew && (
         <div className="field">
-          <label>从模板开始（点一下即可套用，还能继续改）</label>
+          <label>{t("fromTemplate")}</label>
           <div className="chips">
             {AGENT_PRESETS.map((p) => (
               <button key={p.name} className="chip" onClick={() => applyPreset(p)}>
@@ -131,10 +125,10 @@ function EditorBody({ agentId }: { agentId: string }) {
               onClick={() => {
                 set({ name: "", persona: "", greeting: "" });
                 setSuggText("");
-                showToast("从零开始，自由发挥吧", "success");
+                showToast(t("fromScratchToast"), "success");
               }}
             >
-              🎨 从零开始
+              {t("fromScratch")}
             </button>
           </div>
         </div>
@@ -155,18 +149,18 @@ function EditorBody({ agentId }: { agentId: string }) {
             fontSize: 36,
             cursor: "pointer",
           }}
-          title="点击更换头像"
+          title={t("changeAvatar")}
           onClick={() => setShowEmoji(!showEmoji)}
         >
           {form.emoji}
         </div>
         <div style={{ flex: 1 }}>
           <div className="field" style={{ marginBottom: 8 }}>
-            <label>名字</label>
-            <input className="input" value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder="智能体的名字" />
+            <label>{t("name")}</label>
+            <input className="input" value={form.name ?? ""} onChange={(e) => set({ name: e.target.value })} placeholder={t("agentNamePh")} />
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
-            <label>头像色（点击左侧头像换表情）</label>
+            <label>{t("avatarColor")}</label>
             <input
               type="range"
               min={0}
@@ -190,53 +184,53 @@ function EditorBody({ agentId }: { agentId: string }) {
       )}
 
       <div className="field">
-        <label>人设（它是谁、怎么说话）</label>
+        <label>{t("persona")}</label>
         <textarea
           className="input"
           rows={5}
           value={form.persona ?? ""}
           onChange={(e) => set({ persona: e.target.value })}
-          placeholder="描述智能体的性格、说话方式、与你的关系…&#10;例如：你是我的高中同学，性格开朗爱开玩笑，我们都喜欢打篮球…"
+          placeholder={t("personaPh")}
         />
-        <div className="desc">留空则使用默认性格：温暖真诚的好朋友</div>
+        <div className="desc">{t("personaEmpty")}</div>
       </div>
 
       <div className="field">
-        <label>开场白（新对话的第一句话）</label>
+        <label>{t("greeting")}</label>
         <textarea
           className="input"
           rows={2}
           value={form.greeting ?? ""}
           onChange={(e) => set({ greeting: e.target.value })}
-          placeholder="嗨～很高兴见到你！"
+          placeholder={t("greetingPh")}
         />
       </div>
 
       <div className="field">
-        <label>开场建议（每行一条，新对话时显示为快捷气泡）</label>
+        <label>{t("suggestions")}</label>
         <textarea
           className="input"
           rows={2}
           value={suggText}
           onChange={(e) => setSuggText(e.target.value)}
-          placeholder={"陪我聊聊天\n今天有点无聊"}
+          placeholder={t("suggestionsPh")}
         />
       </div>
 
       <div className="set-row" style={{ padding: "6px 0 12px" }}>
         <div className="info">
-          <div className="t">长期记忆</div>
-          <div className="d">自动记住你的喜好与经历，跨对话保持。可在「记忆」页管理</div>
+          <div className="t">{t("longMemory")}</div>
+          <div className="d">{t("longMemoryDesc")}</div>
         </div>
         <Toggle checked={!!form.memoryEnabled} onChange={(v) => set({ memoryEnabled: v })} />
       </div>
 
       {(chatModels.length > 0 || visionModels.length > 0 || embedModels.length > 0) && (
         <>
-          <div className="section-label" style={{ padding: "4px 0" }}>专属模型（可选）</div>
-          {modelSelect("对话模型", "chat", chatModels)}
-          {modelSelect("看图模型", "vision", visionModels)}
-          {modelSelect("记忆检索模型", "embedding", embedModels)}
+          <div className="section-label" style={{ padding: "4px 0" }}>{t("customModels")}</div>
+          {modelSelect(t("chatModel"), "chat", chatModels)}
+          {modelSelect(t("visionModel"), "vision", visionModels)}
+          {modelSelect(t("embedModel"), "embedding", embedModels)}
         </>
       )}
     </Modal>

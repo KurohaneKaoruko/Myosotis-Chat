@@ -6,6 +6,7 @@ import { SttSession, sttSupported, speakSmart, stopAudio } from "../lib/speech";
 import { sttTranscribe } from "../lib/api";
 import { db } from "../lib/db";
 import { resolveModel } from "../lib/utils";
+import { t } from "../i18n";
 
 const MAX_IMG_SIDE = 1024;
 
@@ -208,7 +209,7 @@ export default function Composer() {
     // fallback: record and transcribe with cloud model
     const rm = resolveModel("stt", models, providers, settings);
     if (!rm) {
-      showToast("语音输入不可用：可在设置中开启系统识别，或配置语音转文字模型", "error");
+      showToast(t("visionMissingToast"), "error");
       return;
     }
     try {
@@ -219,7 +220,7 @@ export default function Composer() {
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
-        showToast("正在识别语音…");
+        showToast(t("transcribing"));
         try {
           const t = await sttTranscribe(rm, blob);
           if (t) {
@@ -231,14 +232,14 @@ export default function Composer() {
             }
           }
         } catch (e: any) {
-          showToast(`语音识别失败：${e?.message ?? e}`, "error");
+          showToast(`${t("sttFailed")}${e?.message ?? e}`, "error");
         }
       };
       recRef.current = { recorder, chunks };
       recorder.start();
       setListening(true);
     } catch {
-      showToast("无法访问麦克风，请检查系统权限", "error");
+      showToast(t("micDenied"), "error");
     }
   };
 
@@ -287,7 +288,7 @@ export default function Composer() {
       <div className="composer">
         <button
           className="tool"
-          title={hasVision ? "发送图片（需要看图模型）" : "尚未配置看图模型，图片功能不可用"}
+          title={hasVision ? t("sendImg") : t("noVision")}
           onClick={() => hasVision && fileRef.current?.click()}
           style={{ opacity: hasVision ? 1 : 0.4, cursor: hasVision ? "pointer" : "not-allowed" }}
         >
@@ -306,7 +307,8 @@ export default function Composer() {
             <div className="reply-bar">
               <Icon name="chat" size={13} />
               <span className="reply-text">
-                引用 {replyTo.role === "user" ? "自己" : "AI"}：{replyTo.content.slice(0, 60)}
+                {replyTo.role === "user" ? t("quoteBarSelf") : t("quoteBarAi")}
+                {replyTo.content.slice(0, 60)}
                 {replyTo.content.length > 60 ? "…" : ""}
               </span>
               <button className="reply-x" onClick={() => setReplyTo(null)}>
@@ -321,7 +323,7 @@ export default function Composer() {
                 <i />
                 <i />
               </span>
-              <span>语音对话中：说完自动发送，回复自动朗读 · 再点耳机退出</span>
+              <span>{t("voiceChatBar")}</span>
             </div>
           )}
           {promptMatches.length > 0 && (
@@ -356,7 +358,7 @@ export default function Composer() {
           <textarea
             ref={taRef}
             rows={1}
-            placeholder={listening ? "正在听你说…" : "输入消息，可粘贴/拖入图片…"}
+            placeholder={listening ? t("listening") : t("inputPh")}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
@@ -366,25 +368,25 @@ export default function Composer() {
         </div>
         <button
           className={`tool ${voiceChat ? "active" : ""}`}
-          title={voiceChat ? "退出语音对话模式" : "连续语音对话（说完自动发送，回复自动朗读）"}
+          title={voiceChat ? t("voiceModeOn") : t("voiceModeTip")}
           onClick={toggleVoiceChat}
         >
           <Icon name="headphones" />
         </button>
         <button
           className={`tool ${listening ? "active" : ""}`}
-          title={sttAvailable ? (listening ? "停止识别" : "语音输入") : "语音输入不可用"}
-          onClick={sttAvailable ? startListening : () => showToast("语音输入不可用：浏览器不支持且未配置识别模型", "error")}
+          title={sttAvailable ? (listening ? t("sttOn") : t("sttOff")) : t("sttUnavailable")}
+          onClick={sttAvailable ? startListening : () => showToast(t("sttNoSupport"), "error")}
           style={{ opacity: sttAvailable ? 1 : 0.4 }}
         >
           <Icon name="mic" />
         </button>
         {busy ? (
-          <button className="send" title="停止生成" onClick={stop}>
+          <button className="send" title={t("stopGen")} onClick={stop}>
             <Icon name="stop" />
           </button>
         ) : (
-          <button className="send" title="发送" onClick={doSend} disabled={(!text.trim() && !images.length) || !activeConvoId}>
+          <button className="send" title={t("send")} onClick={doSend} disabled={(!text.trim() && !images.length) || !activeConvoId}>
             <Icon name="send" />
           </button>
         )}

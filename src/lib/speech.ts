@@ -3,6 +3,8 @@
 // Cloud models (OpenAI-compatible) can be configured in settings.
 // ================================================================
 
+import { t, tf } from "../i18n";
+
 export function ttsSupported(): boolean {
   return typeof speechSynthesis !== "undefined";
 }
@@ -12,7 +14,7 @@ export function speakBrowser(text: string, onEnd?: () => void): void {
   speechSynthesis.cancel();
   // strip markdown for nicer reading
   const clean = text
-    .replace(/```[\s\S]*?```/g, "（代码略）")
+    .replace(/```[\s\S]*?```/g, t("ttsCodeOmitted"))
     .replace(/[*_#>`~\[\]()]/g, "")
     .trim();
   if (!clean) return;
@@ -49,7 +51,7 @@ export class SttSession {
   start(onPartial: (t: string) => void, onFinal: (t: string) => void, onError: (e: string) => void): void {
     const Ctor = getRecognitionCtor();
     if (!Ctor) {
-      onError("当前环境不支持语音识别，可在设置中配置语音转文字模型");
+      onError(t("sttErrEnv"));
       return;
     }
     this.stop();
@@ -73,7 +75,7 @@ export class SttSession {
       const err = ev?.error ?? "unknown";
       if (err === "no-speech") return;
       if (err === "aborted" && this.manualStop) return;
-      onError(err === "not-allowed" ? "麦克风权限被拒绝，请在系统设置中允许" : `语音识别错误: ${err}`);
+      onError(err === "not-allowed" ? t("sttErrDenied") : tf("sttErrGeneric", { err }));
     };
     rec.onend = () => {
       // auto restart to keep a continuous session until user stops
@@ -149,7 +151,7 @@ export async function speakSmart(
   }
 ): Promise<void> {
   const clean = text
-    .replace(/```[\s\S]*?```/g, "代码略")
+    .replace(/```[\s\S]*?```/g, t("ttsCodeOmitted"))
     .replace(/[*_#>`~\[\]()]/g, "")
     .trim();
   if (!clean) {

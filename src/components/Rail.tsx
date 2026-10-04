@@ -1,11 +1,11 @@
 import { useStore } from "../store";
 import { Icon, TipFor, type IconName } from "./ui";
+import { t } from "../i18n";
 
-const RAIL_ITEMS: { view: string; icon: IconName; label: string }[] = [
-  { view: "chat", icon: "chat", label: "聊天" },
-  { view: "agents", icon: "agents", label: "智能体" },
-  { view: "memory", icon: "memory", label: "记忆" },
-  { view: "settings", icon: "settings", label: "设置" },
+const RAIL_ITEMS: { view: string; icon: IconName; labelKey: "navChat" | "navMemory" | "navSettings" }[] = [
+  { view: "chat", icon: "chat", labelKey: "navChat" },
+  { view: "memory", icon: "memory", labelKey: "navMemory" },
+  { view: "settings", icon: "settings", labelKey: "navSettings" },
 ];
 
 /** Narrow icon rail, QQNT-style. Desktop only (hidden on mobile via CSS). */
@@ -20,19 +20,19 @@ export default function Rail() {
         <img src="logo.png" alt="Myosotis" />
       </div>
       <div className="rail-items">
-        {RAIL_ITEMS.map((t) => (
-          <TipFor key={t.view} text={t.label}>
-            <button className={`rail-btn ${view === t.view ? "active" : ""}`} onClick={() => setView(t.view as any)}>
-              <Icon name={t.icon} size={21} />
+        {RAIL_ITEMS.map((it) => (
+          <TipFor key={it.view} text={t(it.labelKey)}>
+            <button className={`rail-btn ${view === it.view ? "active" : ""}`} onClick={() => setView(it.view as any)}>
+              <Icon name={it.icon} size={21} />
               <i className="rail-dot" />
             </button>
           </TipFor>
         ))}
       </div>
       <div className="rail-foot">
-        <TipFor text={userName ? `${userName} · 关于你` : "关于你"}>
+        <TipFor text={userName ? `${userName} · ${t("aboutYou")}` : t("aboutYou")}>
           <button className="rail-user" onClick={() => setView("settings")}>
-            {userName?.trim()?.slice(0, 1) || "我"}
+            {userName?.trim()?.slice(0, 1) || t("me")}
           </button>
         </TipFor>
       </div>

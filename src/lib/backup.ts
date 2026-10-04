@@ -4,6 +4,7 @@
 import { exportAll, importAll } from "./db";
 import { encryptText, decryptText } from "./crypto";
 import { davPut, davGet, davMkdir, davList, type WebDavConfig, type DavEntry } from "./webdav";
+import { t } from "../i18n";
 
 const MAGIC = "myosotis-backup";
 
@@ -24,7 +25,7 @@ export async function webdavBackup(
   const dataText = await (await exportAll()).text();
   let payload: Record<string, unknown>;
   if (opts.encrypt) {
-    if (!opts.backupPassword) throw new Error("已开启加密但未设置备份密码");
+    if (!opts.backupPassword) throw new Error(t("encNoPassword"));
     const enc = await encryptText(dataText, opts.backupPassword);
     payload = { magic: MAGIC, version: 2, encrypted: true, ...enc };
   } else {
@@ -50,12 +51,12 @@ export async function webdavRestore(
   try {
     payload = JSON.parse(text);
   } catch {
-    throw new Error("文件不是有效的 JSON");
+    throw new Error(t("notJson"));
   }
-  if (payload?.magic !== MAGIC) throw new Error("不是 Myosotis 的备份文件");
+  if (payload?.magic !== MAGIC) throw new Error(t("notMyosotisBackup"));
   let dataText: string;
   if (payload.encrypted) {
-    if (!backupPassword) throw new Error("该备份已加密，需要输入备份密码");
+    if (!backupPassword) throw new Error(t("encNeedPassword"));
     dataText = await decryptText(payload, backupPassword);
   } else {
     dataText = JSON.stringify(payload.data);

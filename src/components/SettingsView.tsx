@@ -7,39 +7,41 @@ import { friendlyError } from "../lib/utils";
 import { Modal, Icon, SelectBox, Toggle, SliderRow } from "./ui";
 import { DEFAULT_SETTINGS, type PromptTemplate } from "../types";
 import type { ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
+import { t, tf, dateLocale } from "../i18n";
+import type { Dict } from "../i18n/zh-CN";
 
-const PROTOCOL_LABELS: Record<Protocol, string> = {
-  openai: "OpenAI 兼容",
-  anthropic: "Anthropic",
-  gemini: "Gemini",
+const PROTOCOL_LABELS: Record<Protocol, keyof Dict> = {
+  openai: "protoOpenai",
+  anthropic: "protoAnthropic",
+  gemini: "protoGemini",
 };
 
-const TEMPLATE_GROUPS: { label: string; items: { name: string; protocol: Protocol; baseUrl: string }[] }[] = [
+const TEMPLATE_GROUPS: { labelKey: keyof Dict; items: { name: string; protocol: Protocol; baseUrl: string }[] }[] = [
   {
-    label: "热门",
+    labelKey: "groupHot",
     items: [
       { name: "DeepSeek", protocol: "openai", baseUrl: "https://api.deepseek.com/v1" },
       { name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com/v1" },
       { name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com" },
       { name: "Gemini", protocol: "gemini", baseUrl: "https://generativelanguage.googleapis.com" },
       { name: "MiniMax", protocol: "openai", baseUrl: "https://api.minimax.chat/v1" },
-      { name: "硅基流动", protocol: "openai", baseUrl: "https://api.siliconflow.cn/v1" },
+      { name: "SiliconFlow", protocol: "openai", baseUrl: "https://api.siliconflow.cn/v1" },
       { name: "Kimi", protocol: "openai", baseUrl: "https://api.moonshot.cn/v1" },
-      { name: "智谱", protocol: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
+      { name: "Zhipu", protocol: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
     ],
   },
   {
-    label: "更多国内",
+    labelKey: "groupCn",
     items: [
-      { name: "通义千问", protocol: "openai", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
-      { name: "腾讯混元", protocol: "openai", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1" },
-      { name: "讯飞星火", protocol: "openai", baseUrl: "https://spark-api-open.xf-yun.com/v1" },
-      { name: "百川", protocol: "openai", baseUrl: "https://api.baichuan-ai.com/v1" },
-      { name: "零一万物", protocol: "openai", baseUrl: "https://api.lingyiwanwu.com/v1" },
+      { name: "Tongyi Qianwen", protocol: "openai", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+      { name: "Tencent Hunyuan", protocol: "openai", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1" },
+      { name: "iFlytek Spark", protocol: "openai", baseUrl: "https://spark-api-open.xf-yun.com/v1" },
+      { name: "Baichuan", protocol: "openai", baseUrl: "https://api.baichuan-ai.com/v1" },
+      { name: "01.AI", protocol: "openai", baseUrl: "https://api.lingyiwanwu.com/v1" },
     ],
   },
   {
-    label: "国际",
+    labelKey: "groupIntl",
     items: [
       { name: "OpenRouter", protocol: "openai", baseUrl: "https://openrouter.ai/api/v1" },
       { name: "Groq", protocol: "openai", baseUrl: "https://api.groq.com/openai/v1" },
@@ -50,7 +52,7 @@ const TEMPLATE_GROUPS: { label: string; items: { name: string; protocol: Protoco
     ],
   },
   {
-    label: "本地",
+    labelKey: "groupLocal",
     items: [
       { name: "Ollama", protocol: "openai", baseUrl: "http://localhost:11434/v1" },
       { name: "LM Studio", protocol: "openai", baseUrl: "http://localhost:1234/v1" },
@@ -58,22 +60,22 @@ const TEMPLATE_GROUPS: { label: string; items: { name: string; protocol: Protoco
   },
 ];
 
-const ROLE_ROWS: { role: ModelRole; label: string; desc: string }[] = [
-  { role: "chat", label: "对话模型", desc: "智能体的大脑，负责聊天与记忆整理" },
-  { role: "vision", label: "看图模型", desc: "理解你发来的图片" },
-  { role: "embedding", label: "记忆检索模型", desc: "让回忆找得更准（可选，不填也能用）" },
-  { role: "tts", label: "语音朗读模型", desc: "把回复读给你听（可选）" },
-  { role: "stt", label: "语音识别模型", desc: "把你的语音变成文字（可选）" },
+const ROLE_ROWS: { role: ModelRole; labelKey: keyof Dict; descKey: keyof Dict }[] = [
+  { role: "chat", labelKey: "roleChat", descKey: "roleChatDesc" },
+  { role: "vision", labelKey: "roleVision", descKey: "roleVisionDesc" },
+  { role: "embedding", labelKey: "roleEmbed", descKey: "roleEmbedDesc" },
+  { role: "tts", labelKey: "roleTts", descKey: "roleTtsDesc" },
+  { role: "stt", labelKey: "roleStt", descKey: "roleSttDesc" },
 ];
 
-const THEMES: { id: ThemeId; name: string; colors: string }[] = [
-  { id: "mono", name: "黑白", colors: "linear-gradient(135deg,#17181d,#5a6172)" },
-  { id: "azure", name: "蔚蓝", colors: "linear-gradient(135deg,#3b82f6,#6366f1)" },
-  { id: "violet", name: "紫罗兰", colors: "linear-gradient(135deg,#8b5cf6,#d946ef)" },
-  { id: "rose", name: "蔷薇", colors: "linear-gradient(135deg,#f43f5e,#fb7185)" },
-  { id: "forest", name: "森绿", colors: "linear-gradient(135deg,#10b981,#14b8a6)" },
-  { id: "amber", name: "暖阳", colors: "linear-gradient(135deg,#f59e0b,#f97316)" },
-  { id: "ink", name: "墨色", colors: "linear-gradient(135deg,#475569,#334155)" },
+const THEMES: { id: ThemeId; nameKey: keyof Dict; colors: string }[] = [
+  { id: "mono", nameKey: "themeMono", colors: "linear-gradient(135deg,#17181d,#5a6172)" },
+  { id: "azure", nameKey: "themeAzure", colors: "linear-gradient(135deg,#3b82f6,#6366f1)" },
+  { id: "violet", nameKey: "themeViolet", colors: "linear-gradient(135deg,#8b5cf6,#d946ef)" },
+  { id: "rose", nameKey: "themeRose", colors: "linear-gradient(135deg,#f43f5e,#fb7185)" },
+  { id: "forest", nameKey: "themeForest", colors: "linear-gradient(135deg,#10b981,#14b8a6)" },
+  { id: "amber", nameKey: "themeAmber", colors: "linear-gradient(135deg,#f59e0b,#f97316)" },
+  { id: "ink", nameKey: "themeInk", colors: "linear-gradient(135deg,#475569,#334155)" },
 ];
 
 export default function SettingsView() {
@@ -81,9 +83,9 @@ export default function SettingsView() {
     <div className="page">
       <div className="page-inner">
         <div className="page-title">
-          设置
+          {t("settingsTitle")}
           <span className="desc" style={{ fontWeight: 400 }}>
-            配置一次，处处可用
+            {t("settingsDesc")}
           </span>
         </div>
         <ProvidersCard />
@@ -96,7 +98,7 @@ export default function SettingsView() {
         <BackupCard />
         <DataCard />
         <div className="card" style={{ textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
-          Myosotis v0.1.0 · 数据 100% 本地存储，直连模型服务商
+          {t("aboutLine")}
         </div>
       </div>
     </div>
@@ -115,13 +117,13 @@ function ProvidersCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="key" size={16} /> 模型服务
-        <span className="hint">你的 API Key 只保存在本机</span>
+        <Icon name="key" size={16} /> {t("secProviders")}
+        <span className="hint">{t("keysLocal")}</span>
       </h3>
 
       {providers.length === 0 && (
         <div style={{ color: "var(--text-3)", fontSize: 13, marginBottom: 12, padding: "14px", background: "var(--surface-2)", borderRadius: 10, textAlign: "center" }}>
-          还没有添加模型服务。添加一家（如 DeepSeek、OpenAI），就可以开始聊天了 →
+          {t("noProviders")}
         </div>
       )}
 
@@ -134,25 +136,25 @@ function ProvidersCard() {
             </div>
             <div className="info">
               <div className="name">
-                {p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--text-3)" }}>{PROTOCOL_LABELS[p.protocol]}</span>
+                {p.name} <span style={{ fontWeight: 400, fontSize: 11, color: "var(--text-3)" }}>{t(PROTOCOL_LABELS[p.protocol])}</span>
               </div>
               <div className="meta">
-                {p.baseUrl} · {count} 个模型
+                {p.baseUrl} · {tf("nModels", { n: count })}
               </div>
             </div>
-            <button className="icon-btn" title="管理模型" onClick={() => setEditing(p)}>
+            <button className="icon-btn" title={t("manageModels")} onClick={() => setEditing(p)}>
               <Icon name="settings" size={17} />
             </button>
             <button
               className="icon-btn danger"
-              title="删除"
+              title={t("commonDelete")}
               onClick={() => {
                 useStore
                   .getState()
                   .askConfirm({
-                    title: "删除服务商",
-                    message: `删除「${p.name}」及其下所有模型配置？`,
-                    confirmText: "删除",
+                    title: t("deleteProviderTitle"),
+                    message: tf("deleteProviderMsg", { name: p.name }),
+                    confirmText: t("commonDelete"),
                     danger: true,
                   })
                   .then((ok) => { if (ok) removeProvider(p.id); });
@@ -166,7 +168,7 @@ function ProvidersCard() {
 
       <button className="btn primary" style={{ width: "100%" }} onClick={() => setEditing("new")}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Icon name="plus" size={16} /> 添加模型服务
+          <Icon name="plus" size={16} /> {t("addProvider")}
         </span>
       </button>
 
@@ -194,15 +196,15 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
   const placeholder =
     protocol === "openai" ? "https://api.openai.com/v1" : protocol === "anthropic" ? "https://api.anthropic.com" : "https://generativelanguage.googleapis.com";
 
-  const applyTemplate = (t: (typeof TEMPLATE_GROUPS)[number]["items"][number]) => {
-    setProtocol(t.protocol);
-    setBaseUrl(t.baseUrl);
-    if (!name) setName(t.name);
+  const applyTemplate = (tpl: (typeof TEMPLATE_GROUPS)[number]["items"][number]) => {
+    setProtocol(tpl.protocol);
+    setBaseUrl(tpl.baseUrl);
+    if (!name) setName(tpl.name);
   };
 
   const saveAndFetch = async () => {
     if (!name.trim() || !baseUrl.trim()) {
-      showToast("请填写名称和接口地址", "error");
+      showToast(t("needNameAndUrl"), "error");
       return;
     }
     setLoading(true);
@@ -218,9 +220,9 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
       const list = await listRemoteModels(p);
       setRemote(list);
       setPicked(new Set());
-      showToast(`连接成功，发现 ${list.length} 个模型`, "success");
+      showToast(tf("fetchOk", { n: list.length }), "success");
     } catch (e) {
-      showToast(`${friendlyError(e)}\n服务已保存，可手动添加模型名`, "error");
+      showToast(`${friendlyError(e)}\n${t("savedCanManual")}`, "error");
       setRemote([]);
     } finally {
       setLoading(false);
@@ -239,11 +241,11 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
   const confirmPick = async () => {
     if (!provider) return;
     if (!picked.size) {
-      showToast("先勾选要添加的模型", "error");
+      showToast(t("pickFirst"), "error");
       return;
     }
     await addModels(provider.id, Array.from(picked), []);
-    showToast(`已添加 ${picked.size} 个模型`, "success");
+    showToast(tf("addedN", { n: picked.size }), "success");
     onClose();
   };
 
@@ -252,27 +254,27 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
     if (!n) return;
     if (!provider) {
       // create provider first if somehow missing
-      const p = await addProvider({ name: name.trim() || "自定义", protocol, baseUrl: baseUrl.trim() || placeholder, apiKey: apiKey.trim() });
+      const p = await addProvider({ name: name.trim() || t("customProvider"), protocol, baseUrl: baseUrl.trim() || placeholder, apiKey: apiKey.trim() });
       await addModels(p.id, [n], []);
     } else {
       await addModels(provider.id, [n], []);
     }
     setManualName("");
-    showToast("模型已添加", "success");
+    showToast(t("modelAdded"), "success");
   };
 
   return (
-    <Modal title={provider ? `管理「${provider.name}」` : "添加模型服务"} onClose={onClose}>
+    <Modal title={provider ? tf("manageProvider", { name: provider.name }) : t("addProviderTitle")} onClose={onClose}>
       {!provider && (
         <div className="field">
-          <label>快速选择服务商</label>
+          <label>{t("quickPick")}</label>
           {TEMPLATE_GROUPS.map((group) => (
-            <div key={group.label} style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: "var(--text-3)", margin: "4px 0" }}>{group.label}</div>
+            <div key={group.labelKey} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--text-3)", margin: "4px 0" }}>{t(group.labelKey)}</div>
               <div className="chips">
-                {group.items.map((t) => (
-                  <button key={t.name} className={`chip ${baseUrl === t.baseUrl ? "on" : ""}`} onClick={() => applyTemplate(t)}>
-                    {t.name}
+                {group.items.map((tpl) => (
+                  <button key={tpl.name} className={`chip ${baseUrl === tpl.baseUrl ? "on" : ""}`} onClick={() => applyTemplate(tpl)}>
+                    {tpl.name}
                   </button>
                 ))}
               </div>
@@ -282,11 +284,11 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
       )}
 
       <div className="field">
-        <label>接口协议</label>
+        <label>{t("protocol")}</label>
         <div className="chips">
           {(Object.keys(PROTOCOL_LABELS) as Protocol[]).map((pr) => (
             <button key={pr} className={`chip ${protocol === pr ? "on" : ""}`} onClick={() => setProtocol(pr)}>
-              {PROTOCOL_LABELS[pr]}
+              {t(PROTOCOL_LABELS[pr])}
             </button>
           ))}
         </div>
@@ -294,11 +296,11 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
 
       <div className="row">
         <div className="field">
-          <label>名称</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="如 DeepSeek" />
+          <label>{t("providerName")}</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t("providerNamePh")} />
         </div>
         <div className="field">
-          <label>API Key</label>
+          <label>{t("apiKey")}</label>
           <div style={{ position: "relative" }}>
             <input
               className="input"
@@ -313,20 +315,20 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
               onClick={() => setShowKey(!showKey)}
               style={{ position: "absolute", right: 6, top: 6, border: "none", background: "none", cursor: "pointer", color: "var(--text-3)", padding: "4px 8px" }}
             >
-              {showKey ? "隐藏" : "显示"}
+              {showKey ? t("hideKey") : t("showKey")}
             </button>
           </div>
         </div>
       </div>
 
       <div className="field">
-        <label>接口地址（Base URL）</label>
+        <label>{t("baseUrl")}</label>
         <input className="input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={placeholder} />
-        <div className="desc">到服务商控制台获取 API Key，粘贴即可</div>
+        <div className="desc">{t("baseUrlDesc")}</div>
       </div>
 
       <button className="btn primary" style={{ width: "100%" }} onClick={saveAndFetch} disabled={loading}>
-        {loading ? "连接中…" : provider ? "保存并获取模型列表" : "保存并获取模型列表"}
+        {loading ? t("connecting") : t("saveAndFetch")}
       </button>
 
       {remote && (
@@ -344,7 +346,7 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
             </div>
           ) : (
             <div className="remote-list" style={{ padding: 12, textAlign: "center", color: "var(--text-3)", fontSize: 13 }}>
-              没有获取到模型列表，可手动添加
+              {t("noModelsFound")}
             </div>
           )}
           <div className="row" style={{ marginTop: 10 }}>
@@ -353,15 +355,15 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
               value={manualName}
               onChange={(e) => setManualName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && manualAdd()}
-              placeholder="手动输入模型名，如 gpt-4o-mini"
+              placeholder={t("manualModelPh")}
             />
             <button className="btn" style={{ flex: "0 0 auto" }} onClick={manualAdd}>
-              添加
+              {t("add")}
             </button>
           </div>
           {picked.size > 0 && (
             <button className="btn primary" style={{ width: "100%", marginTop: 10 }} onClick={confirmPick}>
-              添加所选 {picked.size} 个模型
+              {tf("addSelected", { n: picked.size })}
             </button>
           )}
           {provider && modelsOfProvider(provider.id).length > 0 && <ExistingModels providerId={provider.id} />}
@@ -380,10 +382,10 @@ function ExistingModels({ providerId }: { providerId: string }) {
   const removeModel = useStore((s) => s.removeModel);
   const updateModel = useStore((s) => s.updateModel);
   if (!models.length) return null;
-  const ROLE_LABELS: Record<string, string> = { chat: "对话", vision: "看图", embedding: "检索", tts: "朗读", stt: "识别" };
+  const ROLE_LABELS: Record<string, keyof Dict> = { chat: "roleShortChat", vision: "roleShortVision", embedding: "roleShortEmbed", tts: "roleShortTts", stt: "roleShortStt" };
   return (
     <>
-      <div className="section-label" style={{ paddingTop: 14 }}>已添加模型（点击徽章切换用途）</div>
+      <div className="section-label" style={{ paddingTop: 14 }}>{t("existingModels")}</div>
       {models.map((m) => (
         <div key={m.id} className="model-row">
           <div className="name" title={m.name}>
@@ -395,18 +397,18 @@ function ExistingModels({ providerId }: { providerId: string }) {
                 key={r}
                 className={`role-badge ${m.roles.includes(r) ? "" : "muted"}`}
                 style={{ border: "none", cursor: "pointer" }}
-                title={`${m.roles.includes(r) ? "取消" : "设为"}${ROLE_LABELS[r]}用途`}
+                title={tf(m.roles.includes(r) ? "roleTipOn" : "roleTipOff", { role: t(ROLE_LABELS[r]) })}
                 onClick={() => {
                   const roles = m.roles.includes(r) ? m.roles.filter((x) => x !== r) : [...m.roles, r];
                   if (!roles.length) return;
                   updateModel(m.id, { roles });
                 }}
               >
-                {ROLE_LABELS[r]}
+                {t(ROLE_LABELS[r])}
               </button>
             ))}
           </div>
-          <button className="icon-btn danger" style={{ width: 28, height: 28 }} onClick={() => removeModel(m.id)} title="删除模型">
+          <button className="icon-btn danger" style={{ width: 28, height: 28 }} onClick={() => removeModel(m.id)} title={t("deleteModelTitle")}>
             <Icon name="trash" size={14} />
           </button>
         </div>
@@ -428,23 +430,23 @@ function DefaultModelsCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="chat" size={16} /> 默认模型
-        <span className="hint">按用途自动选用</span>
+        <Icon name="chat" size={16} /> {t("secDefaultModels")}
+        <span className="hint">{t("byUsage")}</span>
       </h3>
-      {models.length === 0 && <div style={{ color: "var(--text-3)", fontSize: 13 }}>先在上方添加模型服务</div>}
+      {models.length === 0 && <div style={{ color: "var(--text-3)", fontSize: 13 }}>{t("addModelsFirst")}</div>}
       {ROLE_ROWS.map((row) => {
         const options = models.filter((m) => m.roles.includes(row.role));
         return (
           <div key={row.role} className="set-row">
             <div className="info">
-              <div className="t">{row.label}</div>
-              <div className="d">{row.desc}</div>
+              <div className="t">{t(row.labelKey)}</div>
+              <div className="d">{t(row.descKey)}</div>
             </div>
             <SelectBox
               value={settings.defaults[row.role]}
               onChange={(v) => setDefault(row.role, v)}
               options={options.map((m) => ({ value: m.id, label: `${m.label} · ${providerName(m.providerId)}` }))}
-              placeholder="不设置"
+              placeholder={t("unset")}
               style={{ maxWidth: 230 }}
             />
           </div>
@@ -463,65 +465,65 @@ function AppearanceCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="image" size={16} /> 外观
+        <Icon name="image" size={16} /> {t("secAppearance")}
       </h3>
       <div className="field">
-        <label>主题色</label>
+        <label>{t("themeColor")}</label>
         <div className="swatches">
-          {THEMES.map((t) => (
+          {THEMES.map((th) => (
             <div
-              key={t.id}
-              className={`swatch ${settings.themeId === t.id ? "on" : ""}`}
-              style={{ background: t.colors }}
-              title={t.name}
-              onClick={() => setSettings({ themeId: t.id })}
+              key={th.id}
+              className={`swatch ${settings.themeId === th.id ? "on" : ""}`}
+              style={{ background: th.colors }}
+              title={t(th.nameKey)}
+              onClick={() => setSettings({ themeId: th.id })}
             />
           ))}
         </div>
       </div>
       <div className="field">
-        <label>明暗</label>
+        <label>{t("lightDark")}</label>
         <div className="chips">
           {(["light", "dark", "auto"] as ThemeMode[]).map((m) => (
             <button key={m} className={`chip ${settings.themeMode === m ? "on" : ""}`} onClick={() => setSettings({ themeMode: m })}>
-              {m === "light" ? "浅色" : m === "dark" ? "深色" : "跟随系统"}
+              {m === "light" ? t("lightMode") : m === "dark" ? t("darkMode") : t("followSystem")}
             </button>
           ))}
         </div>
       </div>
       <div className="field" style={{ marginBottom: 0 }}>
-        <label>聊天背景</label>
+        <label>{t("chatBg")}</label>
         <div className="chips">
           {[
-            { id: "none", label: "纯色" },
-            { id: "aurora", label: "极光" },
-            { id: "mesh", label: "渐变" },
+            { id: "none", labelKey: "bgNone" as const },
+            { id: "aurora", labelKey: "bgAurora" as const },
+            { id: "mesh", labelKey: "bgMesh" as const },
           ].map((w) => (
             <button key={w.id} className={`chip ${settings.wallpaper === w.id ? "on" : ""}`} onClick={() => setSettings({ wallpaper: w.id })}>
-              {w.label}
+              {t(w.labelKey)}
             </button>
           ))}
         </div>
       </div>
       <div className="field" style={{ marginBottom: 0 }}>
-        <label>气泡风格</label>
+        <label>{t("bubbleStyle")}</label>
         <div className="chips">
           <button
             className={`chip ${(settings.bubbleStyle ?? "modern") === "modern" ? "on" : ""}`}
             onClick={() => setSettings({ bubbleStyle: "modern" })}
           >
-            现代圆角
+            {t("bubbleModern")}
           </button>
           <button
             className={`chip ${settings.bubbleStyle === "classic" ? "on" : ""}`}
             onClick={() => setSettings({ bubbleStyle: "classic" })}
           >
-            经典直角
+            {t("bubbleClassic")}
           </button>
         </div>
       </div>
       <div className="field" style={{ marginBottom: 0 }}>
-        <label>界面语言 / Language</label>
+        <label>{t("uiLanguage")}</label>
         <div className="chips">
           <button
             className={`chip ${settings.language === "zh-CN" ? "on" : ""}`}
@@ -550,19 +552,19 @@ function VoiceCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="speaker" size={16} /> 语音
+        <Icon name="speaker" size={16} /> {t("secVoice")}
       </h3>
       <div className="set-row">
         <div className="info">
-          <div className="t">使用系统朗读</div>
-          <div className="d">免费、离线可用；关闭后使用云端语音模型</div>
+          <div className="t">{t("useSysTts")}</div>
+          <div className="d">{t("useSysTtsDesc")}</div>
         </div>
         <Toggle checked={settings.browserTts} onChange={(v) => setSettings({ browserTts: v })} />
       </div>
       <div className="set-row">
         <div className="info">
-          <div className="t">使用系统语音识别</div>
-          <div className="d">按住麦克风说话变文字；部分浏览器不支持时自动改用云端</div>
+          <div className="t">{t("useSysStt")}</div>
+          <div className="d">{t("useSysSttDesc")}</div>
         </div>
         <Toggle checked={settings.browserStt} onChange={(v) => setSettings({ browserStt: v })} />
       </div>
@@ -580,12 +582,12 @@ function GenParamsCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="refresh" size={16} /> 生成参数
-        <span className="hint">对聊天与记忆整理生效</span>
+        <Icon name="refresh" size={16} /> {t("secGenParams")}
+        <span className="hint">{t("genHint")}</span>
       </h3>
       <SliderRow
-        label="温度"
-        desc="越高越有创造力，越低越严谨稳定"
+        label={t("temperature")}
+        desc={t("temperatureDesc")}
         value={gen.temperature}
         min={0}
         max={2}
@@ -594,8 +596,8 @@ function GenParamsCard() {
         onChange={(v) => setSettings({ genParams: { ...gen, temperature: v } })}
       />
       <SliderRow
-        label="回复长度上限"
-        desc="单次回复的最大 Token 数"
+        label={t("maxTokens")}
+        desc={t("maxTokensDesc")}
         value={gen.maxTokens}
         min={512}
         max={16384}
@@ -604,24 +606,24 @@ function GenParamsCard() {
         onChange={(v) => setSettings({ genParams: { ...gen, maxTokens: v } })}
       />
       <SliderRow
-        label="上下文轮数"
-        desc="逐字携带的最近对话轮数，越大越连贯、消耗越多"
+        label={t("contextTurns")}
+        desc={t("contextTurnsDesc")}
         value={gen.contextTurns}
         min={4}
         max={30}
         step={1}
-        format={(v) => `${v} 轮`}
+        format={(v) => tf("turns", { n: v })}
         onChange={(v) => setSettings({ genParams: { ...gen, contextTurns: v } })}
       />
       <div className="set-row" style={{ borderBottom: "none" }}>
         <div className="info">
-          <div className="t">消息字号</div>
-          <div className="d">聊天气泡的文字大小</div>
+          <div className="t">{t("msgFontSize")}</div>
+          <div className="d">{t("fontSizeDesc")}</div>
         </div>
         <div className="chips">
           {[14, 15, 16].map((n) => (
             <button key={n} className={`chip ${settings.fontSize === n ? "on" : ""}`} onClick={() => setSettings({ fontSize: n })}>
-              {n === 14 ? "小" : n === 15 ? "中" : "大"}
+              {n === 14 ? t("small") : n === 15 ? t("medium") : t("large")}
             </button>
           ))}
         </div>
@@ -653,7 +655,7 @@ function BackupCard() {
 
   const doBackup = async () => {
     if (!wd.url.trim()) {
-      showToast("请先填写 WebDAV 地址", "error");
+      showToast(t("needUrl"), "error");
       return;
     }
     setBusy("backup");
@@ -661,7 +663,7 @@ function BackupCard() {
       const { webdavBackup } = await import("../lib/backup");
       const f = await webdavBackup(cfg(), { encrypt: wd.encrypt, backupPassword: wd.backupPassword });
       localStorage.setItem("myosotis.lastAutoBackup", String(Date.now()));
-      showToast(`备份成功：${f}`, "success");
+      showToast(tf("backupOk", { file: f }), "success");
       const { webdavListBackups } = await import("../lib/backup");
       setBackups(await webdavListBackups(cfg()));
     } catch (e: any) {
@@ -678,7 +680,7 @@ function BackupCard() {
       const list = await webdavListBackups(cfg());
       setBackups(list);
       setSelFile(list[0]?.name ?? null);
-      if (!list.length) showToast("目录里没有备份文件");
+      if (!list.length) showToast(t("noBackupFiles"));
     } catch (e: any) {
       showToast(friendlyError(e), "error");
     } finally {
@@ -688,13 +690,16 @@ function BackupCard() {
 
   const doRestore = async () => {
     if (!selFile) {
-      showToast("先选择要恢复的备份文件", "error");
+      showToast(t("pickFileFirst"), "error");
       return;
     }
     const confirmed = await askConfirm({
-      title: "从 WebDAV 恢复",
-      message: `用「${selFile}」覆盖本机全部数据？\n${wd.encrypt ? "该备份已加密，将使用下方备份密码解密。" : ""}`,
-      confirmText: "覆盖恢复",
+      title: t("restoreTitle"),
+      message: tf("restoreMsg", {
+        file: selFile,
+        extra: wd.encrypt ? t("restoreEncryptedNote") : "",
+      }),
+      confirmText: t("restoreBtn"),
       danger: true,
     });
     if (!confirmed) return;
@@ -702,7 +707,7 @@ function BackupCard() {
     try {
       const { webdavRestore } = await import("../lib/backup");
       await webdavRestore(cfg(), selFile, wd.backupPassword || undefined);
-      showToast("恢复完成，即将刷新", "success");
+      showToast(t("restoreDoneReload"), "success");
       setTimeout(() => location.reload(), 900);
     } catch (e: any) {
       showToast(friendlyError(e), "error");
@@ -713,25 +718,25 @@ function BackupCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="upload" size={16} /> WebDAV 云备份
-        <span className="hint">数据直达你自己的网盘，可选加密</span>
+        <Icon name="upload" size={16} /> {t("secWebdav")}
+        <span className="hint">{t("webdavHint")}</span>
       </h3>
       <div className="field">
-        <label>服务器地址</label>
+        <label>{t("serverUrl")}</label>
         <input
           className="input"
           value={wd.url}
           onChange={(e) => upd({ url: e.target.value })}
-          placeholder="如 https://dav.jianguoyun.com/dav/"
+          placeholder={t("serverUrlPh")}
         />
       </div>
       <div className="row">
         <div className="field">
-          <label>账号</label>
+          <label>{t("account")}</label>
           <input className="input" value={wd.username} onChange={(e) => upd({ username: e.target.value })} autoComplete="off" />
         </div>
         <div className="field">
-          <label>应用密码</label>
+          <label>{t("appPassword")}</label>
           <input
             className="input"
             type="password"
@@ -742,71 +747,71 @@ function BackupCard() {
         </div>
       </div>
       <div className="field">
-        <label>备份目录</label>
+        <label>{t("backupDir")}</label>
         <input className="input" value={wd.directory} onChange={(e) => upd({ directory: e.target.value })} placeholder="/Myosotis" />
       </div>
       <div className="set-row">
         <div className="info">
-          <div className="t">加密备份</div>
-          <div className="d">用密码加密后上传，服务器不可读明文（AES-GCM）</div>
+          <div className="t">{t("encryptBackup")}</div>
+          <div className="d">{t("encryptDesc")}</div>
         </div>
         <Toggle checked={wd.encrypt} onChange={(v) => upd({ encrypt: v })} />
       </div>
       {wd.encrypt && (
         <div className="field">
-          <label>备份密码</label>
+          <label>{t("backupPassword")}</label>
           <input
             className="input"
             type="password"
             value={wd.backupPassword}
             onChange={(e) => upd({ backupPassword: e.target.value })}
-            placeholder="恢复时必须输入相同密码"
+            placeholder={t("backupPasswordPh")}
             autoComplete="new-password"
           />
-          <div className="desc">⚠ 密码丢失将无法恢复加密备份，请务必牢记</div>
+          <div className="desc">{t("backupPasswordWarn")}</div>
         </div>
       )}
       <div className="field">
-        <label>自动备份</label>
+        <label>{t("autoBackup")}</label>
         <div className="chips">
           {(
             [
-              ["off", "关闭"],
-              ["daily", "每天"],
-              ["weekly", "每周"],
+              ["off", "autoOff"],
+              ["daily", "autoDaily"],
+              ["weekly", "autoWeekly"],
             ] as const
-          ).map(([v, label]) => (
+          ).map(([v, key]) => (
             <button key={v} className={`chip ${wd.autoBackup === v ? "on" : ""}`} onClick={() => upd({ autoBackup: v })}>
-              {label}
+              {t(key)}
             </button>
           ))}
         </div>
-        <div className="desc">开启后，启动应用时若超过所选周期未备份则自动执行</div>
+        <div className="desc">{t("autoDesc")}</div>
       </div>
 
       <div className="row">
         <button className="btn primary" onClick={doBackup} disabled={busy !== null}>
-          {busy === "backup" ? "备份中…" : "立即备份"}
+          {busy === "backup" ? t("backupInProgress") : t("backupNow")}
         </button>
         <button className="btn" onClick={doList} disabled={busy !== null || !wd.url.trim()}>
-          {busy === "list" ? "获取中…" : "查看云端备份"}
+          {busy === "list" ? t("fetching") : t("viewCloudBackups")}
         </button>
       </div>
 
       {backups && (
         <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
-          <label>云端备份</label>
+          <label>{t("cloudBackups")}</label>
           <SelectBox
             value={selFile}
             onChange={(v) => setSelFile(v)}
             options={backups.map((b) => ({
               value: b.name,
-              label: `${b.name}${b.modifiedAt ? ` · ${b.modifiedAt.toLocaleString("zh-CN")}` : ""}`,
+              label: `${b.name}${b.modifiedAt ? ` · ${b.modifiedAt.toLocaleString(dateLocale())}` : ""}`,
             }))}
-            placeholder="选择备份"
+            placeholder={t("pickBackup")}
           />
           <button className="btn danger" style={{ marginTop: 8 }} onClick={doRestore} disabled={busy !== null || !selFile}>
-            {busy === "restore" ? "恢复中…" : "从所选备份恢复"}
+            {busy === "restore" ? t("restoring") : t("restoreFromSelected")}
           </button>
         </div>
       )}
@@ -826,12 +831,12 @@ function PromptCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="zap" size={16} /> 快捷指令
-        <span className="hint">输入框输入 / 触发词 快速填入提示词</span>
+        <Icon name="zap" size={16} /> {t("secQuickCmds")}
+        <span className="hint">{t("quickHint")}</span>
       </h3>
       {prompts.length === 0 && (
         <div style={{ color: "var(--text-3)", fontSize: 13, marginBottom: 10 }}>
-          还没有指令。创建如触发词「周报」、内容「帮我写本周工作周报，格式：…」的指令，之后输入 /周报 即可填入。
+          {t("quickEmpty")}
         </div>
       )}
       {prompts.map((p) => (
@@ -843,17 +848,17 @@ function PromptCard() {
             <div className="name">/{p.trigger}</div>
             <div className="meta">{p.content.slice(0, 60)}</div>
           </div>
-          <button className="icon-btn" title="编辑" onClick={() => setEditing(p)}>
+          <button className="icon-btn" title={t("editMsg")} onClick={() => setEditing(p)}>
             <Icon name="edit" size={17} />
           </button>
           <button
             className="icon-btn danger"
-            title="删除"
+            title={t("commonDelete")}
             onClick={() => {
               askConfirm({
-                title: "删除指令",
-                message: `删除快捷指令「/${p.trigger}」？`,
-                confirmText: "删除",
+                title: t("deleteCmdTitle"),
+                message: tf("deleteCmdMsg", { trigger: p.trigger }),
+                confirmText: t("commonDelete"),
                 danger: true,
               }).then((ok) => {
                 if (ok) db.prompts.delete(p.id);
@@ -866,7 +871,7 @@ function PromptCard() {
       ))}
       <button className="btn primary" style={{ width: "100%" }} onClick={() => setEditing("new")}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Icon name="plus" size={16} /> 新建指令
+          <Icon name="plus" size={16} /> {t("newCmd")}
         </span>
       </button>
 
@@ -896,7 +901,7 @@ function PromptEditor({
   const save = async () => {
     const trig = trigger.trim().replace(/^\//, "").replace(/\s+/g, "");
     if (!trig || !content.trim()) {
-      showToast("触发词和内容都要填", "error");
+      showToast(t("cmdNeedBoth"), "error");
       return;
     }
     if (prompt) {
@@ -909,37 +914,37 @@ function PromptEditor({
         createdAt: Date.now(),
       });
     }
-    showToast("已保存", "success");
+    showToast(t("saved"), "success");
     onClose();
   };
 
   return (
     <Modal
-      title={prompt ? "编辑指令" : "新建指令"}
+      title={prompt ? t("editCmd") : t("newCmd")}
       onClose={onClose}
       footer={
         <>
           <button className="btn ghost" onClick={onClose}>
-            取消
+            {t("commonCancel")}
           </button>
           <button className="btn primary" onClick={save}>
-            保存
+            {t("commonSave")}
           </button>
         </>
       }
     >
       <div className="field">
-        <label>触发词（输入 / 后匹配）</label>
-        <input className="input" value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder="如：周报" autoFocus />
+        <label>{t("cmdTrigger")}</label>
+        <input className="input" value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder={t("cmdTriggerPh")} autoFocus />
       </div>
       <div className="field" style={{ marginBottom: 0 }}>
-        <label>提示词模板</label>
+        <label>{t("cmdContent")}</label>
         <textarea
           className="input"
           rows={4}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="选中后填入输入框的完整提示词，可继续修改后发送"
+          placeholder={t("cmdContentPh")}
         />
       </div>
     </Modal>
@@ -955,21 +960,21 @@ function ProfileCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="user" size={16} /> 关于你
-        <span className="hint">所有智能体都会记得这些</span>
+        <Icon name="user" size={16} /> {t("secProfile")}
+        <span className="hint">{t("profileHint")}</span>
       </h3>
       <div className="field">
-        <label>怎么称呼你</label>
-        <input className="input" value={settings.userName} onChange={(e) => setSettings({ userName: e.target.value })} placeholder="如：小雪" />
+        <label>{t("howToCallYou")}</label>
+        <input className="input" value={settings.userName} onChange={(e) => setSettings({ userName: e.target.value })} placeholder={t("yourNamePh")} />
       </div>
       <div className="field" style={{ marginBottom: 0 }}>
-        <label>自我介绍（可选）</label>
+        <label>{t("selfIntro")}</label>
         <textarea
           className="input"
           rows={3}
           value={settings.userProfile}
           onChange={(e) => setSettings({ userProfile: e.target.value })}
-          placeholder="比如你的职业、兴趣、正在忙的事…智能体会把它当作对你的初始了解"
+          placeholder={t("selfIntroPh")}
         />
       </div>
     </div>
@@ -985,23 +990,23 @@ function DataCard() {
   return (
     <div className="card">
       <h3>
-        <Icon name="book" size={16} /> 数据与备份
+        <Icon name="book" size={16} /> {t("secData")}
       </h3>
       <div className="set-row" style={{ borderBottom: "none" }}>
         <div className="info">
-          <div className="t">隐私</div>
-          <div className="d">对话、记忆、API Key 全部只存于本机设备，不经过任何第三方服务器</div>
+          <div className="t">{t("privacy")}</div>
+          <div className="d">{t("privacyDesc")}</div>
         </div>
       </div>
       <div className="row">
         <button className="btn" onClick={() => backup()}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Icon name="download" size={15} /> 导出备份
+            <Icon name="download" size={15} /> {t("exportBackup")}
           </span>
         </button>
         <label className="btn" style={{ textAlign: "center" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Icon name="upload" size={15} /> 导入备份
+            <Icon name="upload" size={15} /> {t("importBackup")}
           </span>
           <input
             type="file"
@@ -1013,9 +1018,9 @@ function DataCard() {
                 useStore
                   .getState()
                   .askConfirm({
-                    title: "导入备份",
-                    message: "导入将覆盖当前所有数据（对话、智能体、记忆、设置），确定继续？",
-                    confirmText: "覆盖导入",
+                    title: t("importConfirmTitle"),
+                    message: t("importConfirmMsg"),
+                    confirmText: t("overwriteImport"),
                     danger: true,
                   })
                   .then((ok) => { if (ok) restore(f); });

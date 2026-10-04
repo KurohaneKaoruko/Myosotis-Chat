@@ -1,5 +1,6 @@
 import type { Provider, ResolvedModel } from "../types";
 import { trimUrl } from "./utils";
+import { t } from "../i18n";
 
 // ================================================================
 // Unified multi-protocol model client (OpenAI / Anthropic / Gemini)
@@ -79,7 +80,7 @@ async function* sseData(res: Response, signal?: AbortSignal): AsyncGenerator<str
 
 function splitDataUrl(dataUrl: string): { mime: string; data: string } {
   const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
-  if (!m) throw new Error("图片格式无法解析");
+  if (!m) throw new Error(t("imgParseFail"));
   return { mime: m[1], data: m[2] };
 }
 
@@ -208,13 +209,13 @@ export async function chatComplete(rm: ResolvedModel, messages: ApiMessage[], op
     }
     let delta = "";
     if (p.protocol === "openai") {
-      if (j.error) throw new Error(j.error.message ?? "服务返回错误");
+      if (j.error) throw new Error(j.error.message ?? t("srvError"));
       delta = j.choices?.[0]?.delta?.content ?? "";
     } else if (p.protocol === "anthropic") {
       if (j.type === "content_block_delta" && j.delta?.type === "text_delta") delta = j.delta.text ?? "";
-      if (j.type === "error") throw new Error(j.error?.message ?? "服务返回错误");
+      if (j.type === "error") throw new Error(j.error?.message ?? t("srvError"));
     } else {
-      if (j.error) throw new Error(j.error.message ?? "服务返回错误");
+      if (j.error) throw new Error(j.error.message ?? t("srvError"));
       delta = (j.candidates?.[0]?.content?.parts ?? []).map((x: any) => x.text ?? "").join("");
     }
     if (delta) {
@@ -251,7 +252,7 @@ export async function embedText(rm: ResolvedModel, text: string): Promise<number
     const j = await res.json();
     return j.embedding?.values ?? [];
   }
-  throw new Error("Anthropic 暂不提供向量模型，请使用 OpenAI 兼容或 Gemini 的 Embedding 模型");
+  throw new Error(t("noAnthropicEmbed"));
 }
 
 // ----------------------------------------------------------------

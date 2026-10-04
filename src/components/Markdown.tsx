@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import Prism from "prismjs";
+import { t } from "../i18n";
 // language components (order matters: deps first)
 import "prismjs/components/prism-typescript";
 import "prismjs/components/prism-jsx";
@@ -110,12 +111,12 @@ export default function Markdown({ text }: { text: string }) {
       if (!pre.querySelector(".copy-code")) {
         const btn = document.createElement("button");
         btn.className = "copy-code";
-        btn.textContent = "复制";
+        btn.textContent = t("copy");
         btn.onclick = async () => {
           try {
             await navigator.clipboard.writeText(code.textContent ?? "");
-            btn.textContent = "已复制";
-            setTimeout(() => (btn.textContent = "复制"), 1500);
+            btn.textContent = t("copied");
+            setTimeout(() => (btn.textContent = t("copy")), 1500);
           } catch {}
         };
         pre.appendChild(btn);

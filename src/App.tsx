@@ -5,7 +5,6 @@ import { useStore, applyTheme } from "./store";
 import Rail from "./components/Rail";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
-import AgentsView from "./components/AgentsView";
 import MemoryView from "./components/MemoryView";
 import SettingsView from "./components/SettingsView";
 import AgentEditor from "./components/AgentEditor";
@@ -100,7 +99,6 @@ export default function App() {
         {sidebarOpen && <div className="sidebar-mask" onClick={() => useStore.getState().setSidebar(false)} />}
           <main className="main" data-wallpaper={settings.wallpaper} key={view}>
             {view === "chat" && <ChatView />}
-            {view === "agents" && <AgentsView />}
             {view === "memory" && <MemoryView />}
             {view === "settings" && <SettingsView />}
           </main>
@@ -139,9 +137,8 @@ function ConfirmHostBridge() {
 // ----------------------------------------------------------------
 // Mobile bottom tab bar (hidden on desktop via CSS)
 // ----------------------------------------------------------------
-const TABS: { view: string; icon: IconName; labelKey: "navChat" | "navAgents" | "navMemory" | "navSettings" }[] = [
+const TABS: { view: string; icon: IconName; labelKey: "navChat" | "navMemory" | "navSettings" }[] = [
   { view: "chat", icon: "chat", labelKey: "navChat" },
-  { view: "agents", icon: "agents", labelKey: "navAgents" },
   { view: "memory", icon: "memory", labelKey: "navMemory" },
   { view: "settings", icon: "settings", labelKey: "navSettings" },
 ];
@@ -215,14 +212,14 @@ function Onboarding() {
               </div>
             </div>
             <button className="btn primary" style={{ width: "100%", padding: "13px" }} onClick={() => finish("settings")}>
-              开始配置（约 1 分钟）
+              {t("obCta")}
             </button>
             <button
               className="btn ghost"
               style={{ width: "100%", marginTop: 10 }}
               onClick={() => finish("chat")}
             >
-              先逛逛
+              {t("obBrowse")}
             </button>
           </div>
         </div>

@@ -159,12 +159,13 @@ export const DEFAULT_SETTINGS: Settings = {
   onboardingDone: false,
 };
 
-export const MEMORY_KINDS: { id: MemoryKind; label: string; icon: string }[] = [
-  { id: "fact", label: "事实", icon: "📌" },
-  { id: "preference", label: "喜好", icon: "💗" },
-  { id: "event", label: "经历", icon: "🗓️" },
-  { id: "relationship", label: "关系", icon: "🤝" },
-  { id: "goal", label: "目标", icon: "🎯" },
+// Kind labels are UI text — resolved via i18n keys in MemoryView (kindFact…kindGoal).
+export const MEMORY_KINDS: { id: MemoryKind; icon: string }[] = [
+  { id: "fact", icon: "📌" },
+  { id: "preference", icon: "💗" },
+  { id: "event", icon: "🗓️" },
+  { id: "relationship", icon: "🤝" },
+  { id: "goal", icon: "🎯" },
 ];
 
 export const AGENT_PRESETS: Omit<Agent, "id" | "createdAt" | "updatedAt">[] = [

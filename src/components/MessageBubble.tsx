@@ -82,7 +82,7 @@ export default function MessageBubble({
       onClick={selectable ? onToggleSelect : undefined}
     >
       {isUser ? (
-        <div className="ava user-ava">{settings.userName?.trim()?.slice(0, 1) || "我"}</div>
+        <div className="ava user-ava">{settings.userName?.trim()?.slice(0, 1) || t("me")}</div>
       ) : (
         <div
           className="ava"
@@ -157,51 +157,51 @@ export default function MessageBubble({
         {streaming === undefined && !editing && (
           <div className="acts" style={isUser ? { justifyContent: "flex-end" } : undefined}>
             <span className="time">{formatTime(msg.createdAt)}</span>
-            <button onClick={copy} title="复制">
-              <Icon name="copy" size={12} /> 复制
+            <button onClick={copy} title={t("copy")}>
+              <Icon name="copy" size={12} /> {t("copy")}
             </button>
             {!isUser && (
-              <button onClick={speak} title={speaking ? "停止朗读" : "朗读"}>
-                <Icon name="speaker" size={12} /> {speaking ? "停止" : "朗读"}
+              <button onClick={speak} title={speaking ? t("stopSpeak") : t("speak")}>
+                <Icon name="speaker" size={12} /> {speaking ? t("stopSpeak") : t("speak")}
               </button>
             )}
             {!isUser && isLast && msg.status === "error" && (
-              <button onClick={() => regenerate()} title="重试">
-                <Icon name="refresh" size={12} /> 重试
+              <button onClick={() => regenerate()} title={t("retry")}>
+                <Icon name="refresh" size={12} /> {t("retry")}
               </button>
             )}
             {!isUser && isLast && msg.status !== "error" && (
-              <button onClick={() => regenerate()} title="重新生成">
-                <Icon name="refresh" size={12} /> 重写
+              <button onClick={() => regenerate()} title={t("rewrite")}>
+                <Icon name="refresh" size={12} /> {t("rewrite")}
               </button>
             )}
             <button
-              title="引用回复"
+              title={t("quote")}
               onClick={() => setReplyTo({ role: msg.role, content: msg.content })}
             >
-              <Icon name="chat" size={12} /> 引用
+              <Icon name="chat" size={12} /> {t("quote")}
             </button>
             {isUser && (
               <button
-                title="编辑后重新发送"
+                title={t("editResend")}
                 onClick={() => {
                   setEditText(msg.content);
                   setEditing(true);
                 }}
               >
-                <Icon name="edit" size={12} /> 编辑
+                <Icon name="edit" size={12} /> {t("editMsg")}
               </button>
             )}
             <button
-              title="删除这条消息"
+              title={t("deleteMsg")}
               onClick={() => {
                 useStore
                   .getState()
-                  .askConfirm({ title: "删除消息", message: "删除这条消息？", confirmText: "删除", danger: true })
+                  .askConfirm({ title: t("deleteMsgTitle"), message: t("deleteMsgBody"), confirmText: t("commonDelete"), danger: true })
                   .then((ok) => { if (ok) deleteMessage(msg.id); });
               }}
             >
-              <Icon name="trash" size={12} /> 删除
+              <Icon name="trash" size={12} /> {t("deleteMsg")}
             </button>
           </div>
         )}
