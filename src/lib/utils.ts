@@ -1,4 +1,5 @@
 import type { ModelRole, ModelConfig, Provider, ResolvedModel, Settings } from "../types";
+import { getLanguage } from "../i18n";
 
 export function uid(prefix = ""): string {
   const core =
@@ -17,6 +18,7 @@ export function clamp(n: number, min: number, max: number): number {
 }
 
 export function formatTime(ts: number): string {
+  const locale = getLanguage() === "en" ? "en-US" : "zh-CN";
   const d = new Date(ts);
   const today = new Date();
   const sameDay =
@@ -24,18 +26,18 @@ export function formatTime(ts: number): string {
     d.getMonth() === today.getMonth() &&
     d.getDate() === today.getDate();
   if (sameDay) {
-    return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   }
   const yesterday = new Date(today.getTime() - 86400000);
   const isYesterday =
     d.getFullYear() === yesterday.getFullYear() &&
     d.getMonth() === yesterday.getMonth() &&
     d.getDate() === yesterday.getDate();
-  if (isYesterday) return "昨天";
+  if (isYesterday) return getLanguage() === "en" ? "Yesterday" : "昨天";
   if (d.getFullYear() === today.getFullYear()) {
-    return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+    return d.toLocaleDateString(locale, { month: "numeric", day: "numeric" });
   }
-  return d.toLocaleDateString("zh-CN", { year: "numeric", month: "numeric", day: "numeric" });
+  return d.toLocaleDateString(locale, { year: "numeric", month: "numeric", day: "numeric" });
 }
 
 /** Normalized base url without trailing slash. */

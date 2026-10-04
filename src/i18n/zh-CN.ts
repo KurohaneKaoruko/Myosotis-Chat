@@ -16,6 +16,15 @@ const zhCN = {
   createFirst: "创建第一个 →",
   startNewChat: "开始新对话",
 
+  // common
+  commonCancel: "取消",
+  commonConfirm: "确定",
+  commonSave: "保存",
+  commonDelete: "删除",
+  commonClose: "关闭",
+  ttsNotConfigured: "未配置语音合成模型，可在「设置 → 语音」开启系统朗读",
+  speakFailed: "朗读失败",
+
   // chat view
   pickConversation: "选择一个对话，开始聊天",
   pickMobile: "点击底部「聊天」标签查看对话",

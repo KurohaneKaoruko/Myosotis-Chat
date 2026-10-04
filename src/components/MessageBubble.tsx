@@ -5,6 +5,7 @@ import { resolveModel, formatTime } from "../lib/utils";
 import { speakBrowser, playTtsBlob, stopAudio } from "../lib/speech";
 import { ttsSynthesize } from "../lib/api";
 import { Icon } from "./ui";
+import { t } from "../i18n";
 import Markdown from "./Markdown";
 
 export default function MessageBubble({
@@ -42,9 +43,9 @@ export default function MessageBubble({
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(msg.content);
-      showToast("已复制", "success");
+      showToast(t("copied"), "success");
     } catch {
-      showToast("复制失败", "error");
+      showToast(t("copyFailed"), "error");
     }
   };
 
@@ -61,17 +62,17 @@ export default function MessageBubble({
       } else {
         const rm = resolveModel("tts", models, providers, settings);
         if (!rm) {
-          showToast("未配置语音合成模型，可在「设置 → 语音」开启系统朗读", "error");
+          showToast(t("ttsNotConfigured"), "error");
           setSpeaking(false);
           return;
         }
-        const blob = await ttsSynthesize(rm, msg.content.replace(/```[\s\S]*?```/g, "代码略").slice(0, 800));
+        const blob = await ttsSynthesize(rm, msg.content.replace(/```[\s\S]*?```/g, "…").slice(0, 800));
         await playTtsBlob(blob);
         setSpeaking(false);
       }
     } catch (e: any) {
       setSpeaking(false);
-      showToast(`朗读失败：${e?.message ?? e}`, "error");
+      showToast(`${t("speakFailed")}: ${e?.message ?? e}`, "error");
     }
   };
 
@@ -110,7 +111,7 @@ export default function MessageBubble({
             <div className="reply-quote">
               <Icon name="chat" size={12} />
               <span>
-                {msg.replyTo.role === "user" ? "自己" : "AI"}：{msg.replyTo.content.slice(0, 80)}
+                {msg.replyTo.role === "user" ? t("quoteSelf") : t("quoteAi")}：{msg.replyTo.content.slice(0, 80)}
                 {msg.replyTo.content.length > 80 ? "…" : ""}
               </span>
             </div>
@@ -131,10 +132,10 @@ export default function MessageBubble({
               />
               <div className="edit-ops">
                 <button className="btn sm ghost" onClick={() => setEditing(false)}>
-                  取消
+                  {t("commonCancel")}
                 </button>
                 <button className="btn sm primary" onClick={() => editAndResend(msg.id, editText)}>
-                  保存并重新发送
+                  {t("saveResend")}
                 </button>
               </div>
             </div>
