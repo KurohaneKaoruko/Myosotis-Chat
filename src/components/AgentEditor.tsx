@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Modal, Icon, SelectBox, Toggle } from "./ui";
-import { AGENT_PRESETS, type Agent } from "../types";
+import { AGENT_PRESETS, type Agent, type Scenario } from "../types";
 import { t, tf } from "../i18n";
+import ScenarioEditor from "./ScenarioEditor";
 
 const EMOJIS = [
   "🌸","🌺","🌻","🌷","🌹","🪻","🐱","🐶","🦊","🐰","🐻","🐼","🐨","🦁","🐯","🐹",
@@ -25,11 +26,17 @@ function EditorBody({ agentId }: { agentId: string }) {
   const setEditingAgentId = useStore((s) => s.setEditingAgentId);
   const openOrCreateConversation = useStore((s) => s.openOrCreateConversation);
   const showToast = useStore((s) => s.showToast);
+  const scenarios = useStore((s) => s.scenarios);
+  const duplicateScenario = useStore((s) => s.duplicateScenario);
+  const deleteScenario = useStore((s) => s.deleteScenario);
 
   const agent = agents.find((a) => a.id === agentId);
   const [form, setForm] = useState<Agent>(agent ? { ...agent } : ({} as Agent));
   const [suggText, setSuggText] = useState((agent?.suggestions ?? []).join("\n"));
   const [showEmoji, setShowEmoji] = useState(false);
+  const [editingScenario, setEditingScenario] = useState<Scenario | "new" | null>(null);
+
+  const agentScenarios = scenarios.filter((s) => s.agentId === agentId);
 
   if (!agent) return null;
   const isNew = agent.name === t("newAgent") && !agent.persona;
@@ -84,7 +91,8 @@ function EditorBody({ agentId }: { agentId: string }) {
   );
 
   return (
-    <Modal
+    <>
+      <Modal
       title={t("editorTitle")}
       onClose={() => setEditingAgentId(null)}
       footer={
@@ -225,6 +233,53 @@ function EditorBody({ agentId }: { agentId: string }) {
         <Toggle checked={!!form.memoryEnabled} onChange={(v) => set({ memoryEnabled: v })} />
       </div>
 
+      <div className="section-label" style={{ padding: "4px 0" }}>{t("scenarioSection")}</div>
+      {agentScenarios.length === 0 && (
+        <div className="desc" style={{ marginBottom: 8 }}>{t("noScenarios")}</div>
+      )}
+      {agentScenarios.map((s) => (
+        <div key={s.id} className="provider-card" style={{ marginBottom: 8 }}>
+          <div className="logo" style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>📖</div>
+          <div className="info">
+            <div className="name">{s.name}</div>
+            <div className="meta">{tf("nEvents", { n: s.events.length })}</div>
+          </div>
+          <button
+            className="icon-btn"
+            title={t("duplicateScenario")}
+            onClick={async () => {
+              await duplicateScenario(s.id);
+              showToast(t("saved"), "success");
+            }}
+          >
+            <Icon name="copy" size={16} />
+          </button>
+          <button className="icon-btn" title={t("editScenario")} onClick={() => setEditingScenario(s)}>
+            <Icon name="edit" size={17} />
+          </button>
+          <button
+            className="icon-btn danger"
+            title={t("deleteScenarioTitle")}
+            onClick={() => {
+              useStore
+                .getState()
+                .askConfirm({
+                  title: t("deleteScenarioTitle"),
+                  message: tf("deleteScenarioMsg", { name: s.name }),
+                  confirmText: t("commonDelete"),
+                  danger: true,
+                })
+                .then((ok) => { if (ok) deleteScenario(s.id); });
+            }}
+          >
+            <Icon name="trash" size={17} />
+          </button>
+        </div>
+      ))}
+      <button className="btn sm" style={{ marginBottom: 12 }} onClick={() => setEditingScenario("new")}>
+        <Icon name="plus" size={14} /> {t("newScenario")}
+      </button>
+
       {(chatModels.length > 0 || visionModels.length > 0 || embedModels.length > 0) && (
         <>
           <div className="section-label" style={{ padding: "4px 0" }}>{t("customModels")}</div>
@@ -233,6 +288,14 @@ function EditorBody({ agentId }: { agentId: string }) {
           {modelSelect(t("embedModel"), "embedding", embedModels)}
         </>
       )}
-    </Modal>
+      </Modal>
+      {editingScenario && (
+        <ScenarioEditor
+          agentId={agent.id}
+          scenario={editingScenario === "new" ? null : editingScenario}
+          onClose={() => setEditingScenario(null)}
+        />
+      )}
+    </>
   );
 }

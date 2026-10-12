@@ -67,8 +67,17 @@ export default function Composer() {
   const stop = useStore((s) => s.stop);
   const showToast = useStore((s) => s.showToast);
   const messages = useStore((s) => s.messages);
+  const convos = useStore((s) => s.convos);
+  const scenarios = useStore((s) => s.scenarios);
+  const triggerNextStoryEvent = useStore((s) => s.triggerNextStoryEvent);
   const streamingNow = useStore((s) => s.streamingConvoId) !== null;
   const [voiceChat, setVoiceChat] = useState(false);
+
+  const activeConvo = convos.find((c) => c.id === activeConvoId);
+  const storyScenario =
+    activeConvo?.mode === "story" && activeConvo.scenarioId
+      ? scenarios.find((s) => s.id === activeConvo.scenarioId) ?? null
+      : null;
 
   const prompts = useLiveQuery(() => db.prompts.toArray(), []) ?? [];
   const slashQuery = text.startsWith("/") && !text.includes("\n") ? text.slice(1).toLowerCase() : null;
@@ -324,6 +333,27 @@ export default function Composer() {
                 <i />
               </span>
               <span>{t("voiceChatBar")}</span>
+            </div>
+          )}
+          {storyScenario && storyScenario.plotPrompts.length > 0 && (
+            <div className="plot-chips">
+              {storyScenario.plotPrompts.map((p, i) => (
+                <button key={i} className="suggest-chip" disabled={busy} onClick={() => send(p)}>
+                  {p}
+                </button>
+              ))}
+              <button
+                className="suggest-chip plot-advance"
+                disabled={busy || !activeConvoId}
+                title={t("manualAdvance")}
+                onClick={async () => {
+                  if (!activeConvoId) return;
+                  const ev = await triggerNextStoryEvent(activeConvoId);
+                  if (!ev) showToast(t("storyAllFired"));
+                }}
+              >
+                ⚡ {t("manualAdvance")}
+              </button>
             </div>
           )}
           {promptMatches.length > 0 && (

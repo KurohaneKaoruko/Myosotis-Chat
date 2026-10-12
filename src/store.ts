@@ -16,6 +16,8 @@ import {
   type ModelConfig,
   type ModelRole,
   type Provider,
+  type Scenario,
+  type ScenarioEvent,
   type Settings,
 } from "./types";
 
@@ -39,6 +41,7 @@ interface AppState {
   agents: Agent[];
   convos: Conversation[];
   messages: ChatMessage[]; // messages of the active conversation
+  scenarios: Scenario[];
   settings: Settings;
   ready: boolean;
 
@@ -108,6 +111,14 @@ interface AppState {
   updateMemory: (id: string, patch: Partial<MemoryItem>) => Promise<void>;
   deleteMemory: (id: string) => Promise<void>;
 
+  // ----- scenarios (story mode) -----
+  saveScenario: (s: Scenario) => Promise<void>;
+  deleteScenario: (id: string) => Promise<void>;
+  duplicateScenario: (id: string) => Promise<Scenario | null>;
+  enterStoryMode: (convoId: string, scenarioId: string) => Promise<void>;
+  exitStoryMode: (convoId: string) => Promise<void>;
+  triggerNextStoryEvent: (convoId: string) => Promise<ScenarioEvent | null>;
+
   // ----- backup -----
   backup: () => Promise<void>;
   restore: (file: File) => Promise<void>;
@@ -115,6 +126,8 @@ interface AppState {
 
 const abortRef: { current: AbortController | null } = { current: null };
 const extractCounter: Record<string, number> = {}; // convoId -> user turns since last extraction
+// manual "advance plot" event waiting to be injected into the next send()
+const pendingStoryEvent: { current: { convoId: string; eventId: string } | null } = { current: null };
 let initStarted = false; // React StrictMode double-invokes effects
 let confirmResolver: ((ok: boolean) => void) | null = null;
 
@@ -136,6 +149,7 @@ export const useStore = create<AppState>()(
       agents: [],
       convos: [],
       messages: [],
+      scenarios: [],
       settings: DEFAULT_SETTINGS,
       ready: false,
 
@@ -167,19 +181,21 @@ export const useStore = create<AppState>()(
         let models: ModelConfig[] = [];
         let agents: Agent[] = [];
         let convos: Conversation[] = [];
+        let scenarios: Scenario[] = [];
         try {
-          [providers, models, agents, convos] = await Promise.all([
+          [providers, models, agents, convos, scenarios] = await Promise.all([
             db.providers.toArray(),
             db.models.toArray(),
             db.agents.orderBy("createdAt").toArray(),
             db.conversations.orderBy("updatedAt").reverse().toArray(),
+            db.scenarios.toArray(),
           ]);
           convos = sortConvos(convos);
         } catch (e) {
           console.error("[init] database error:", e);
           get().showToast(t("dbReadFailed"), "error");
         }
-        set({ providers, models, agents, convos, ready: true });
+        set({ providers, models, agents, convos, scenarios, ready: true });
         // restore last conversation; remap if it was merged away
         const last = get().activeConvoId;
         const target = last ? (convoRemap?.get(last) ?? last) : null;
@@ -377,11 +393,12 @@ export const useStore = create<AppState>()(
         set({ agents: get().agents.map((a) => (a.id === id ? { ...a, ...patch, updatedAt: now() } : a)) });
       },
       async deleteAgent(id) {
-        await db.transaction("rw", db.agents, db.conversations, db.messages, db.memories, async () => {
+        await db.transaction("rw", db.agents, db.conversations, db.messages, db.memories, db.scenarios, async () => {
           const convoIds = await db.conversations.where("agentId").equals(id).primaryKeys();
           await db.conversations.bulkDelete(convoIds);
           await db.messages.where("conversationId").anyOf(convoIds).delete();
           await db.memories.where("agentId").equals(id).delete();
+          await db.scenarios.where("agentId").equals(id).delete();
           await db.agents.delete(id);
         });
         const convos = get().convos.filter((c) => c.agentId !== id);
@@ -389,6 +406,7 @@ export const useStore = create<AppState>()(
         set({
           agents: get().agents.filter((a) => a.id !== id),
           convos,
+          scenarios: get().scenarios.filter((s) => s.agentId !== id),
           activeConvoId: activeLost ? convos[0]?.id ?? null : get().activeConvoId,
           editingAgentId: null,
         });
@@ -564,8 +582,48 @@ export const useStore = create<AppState>()(
           }
         } catch {}
 
-        // 4. build context with memory retrieval
-        const context = await buildContextMessages(agent, currentConvo, allMsgs, settings, models, providers);
+        // 4. build context with memory retrieval (or story injection in story mode)
+        let story: { scenario: Scenario; newlyTriggered: ScenarioEvent[] } | undefined;
+        if (currentConvo.mode === "story" && currentConvo.scenarioId) {
+          const scenario = get().scenarios.find((s) => s.id === currentConvo.scenarioId);
+          if (scenario) {
+            const triggered = [...(currentConvo.storyState?.triggeredEventIds ?? [])];
+            const newly: ScenarioEvent[] = [];
+            // manual "advance plot" event queued by the composer button;
+            // it is pre-marked as triggered, so treat it as newly fired unconditionally
+            if (pendingStoryEvent.current?.convoId === convo.id) {
+              const ev = scenario.events.find((e) => e.id === pendingStoryEvent.current!.eventId);
+              if (ev) {
+                if (!triggered.includes(ev.id)) triggered.push(ev.id);
+                newly.push(ev);
+              }
+              pendingStoryEvent.current = null;
+            }
+            // keyword triggers: comma-separated keywords matched against the user message
+            for (const ev of scenario.events) {
+              if (triggered.includes(ev.id) || newly.some((n) => n.id === ev.id)) continue;
+              const keywords = ev.trigger.split(/[,，]/).map((k) => k.trim()).filter(Boolean);
+              if (keywords.length && keywords.some((k) => trimmed.includes(k))) {
+                triggered.push(ev.id);
+                newly.push(ev);
+              }
+            }
+            if (triggered.length !== (currentConvo.storyState?.triggeredEventIds?.length ?? 0)) {
+              const storyState = {
+                openedAt: currentConvo.storyState?.openedAt,
+                triggeredEventIds: triggered,
+              };
+              await db.conversations.update(convo.id, { storyState });
+              currentConvo = { ...currentConvo, storyState };
+              set((s) => ({
+                convos: s.convos.map((c) => (c.id === convo.id ? { ...c, storyState } : c)),
+              }));
+            }
+            story = { scenario, newlyTriggered: newly };
+          }
+        }
+
+        const context = await buildContextMessages(agent, currentConvo, allMsgs, settings, models, providers, story);
 
         // 5. stream
         set((s) => ({
@@ -649,7 +707,7 @@ export const useStore = create<AppState>()(
             )
             .catch(() => {});
         }
-        if (agent.memoryEnabled && extractCounter[convo.id] >= 3) {
+        if (agent.memoryEnabled && currentConvo.mode !== "story" && extractCounter[convo.id] >= 3) {
           extractCounter[convo.id] = 0;
           const embeddingRm = resolveModel("embedding", models, providers, settings, agent.models);
           const recent = [...allMsgs, userMsg, aiMsg].slice(-14);
@@ -726,6 +784,97 @@ export const useStore = create<AppState>()(
       },
       async deleteMemory(id) {
         await db.memories.delete(id);
+      },
+
+      // -------------------------------------------------------
+      async saveScenario(s) {
+        const next: Scenario = { ...s, updatedAt: now() };
+        await db.scenarios.put(next);
+        set((st) => ({
+          scenarios: st.scenarios.some((x) => x.id === next.id)
+            ? st.scenarios.map((x) => (x.id === next.id ? next : x))
+            : [...st.scenarios, next],
+        }));
+      },
+      async deleteScenario(id) {
+        await db.scenarios.delete(id);
+        // conversations running this scenario fall back to chat mode (messages kept)
+        const affected = get().convos.filter((c) => c.scenarioId === id && c.mode === "story");
+        for (const c of affected) await db.conversations.update(c.id, { mode: "chat" });
+        set((st) => ({
+          scenarios: st.scenarios.filter((s) => s.id !== id),
+          convos: st.convos.map((c) => (c.scenarioId === id ? { ...c, mode: "chat" as const } : c)),
+        }));
+      },
+      async duplicateScenario(id) {
+        const src = get().scenarios.find((s) => s.id === id);
+        if (!src) return null;
+        const copy: Scenario = {
+          ...src,
+          id: uid("scn"),
+          name: `${src.name} ${t("copySuffix")}`,
+          events: src.events.map((e) => ({ ...e, id: uid("evt") })),
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        await db.scenarios.add(copy);
+        set((st) => ({ scenarios: [...st.scenarios, copy] }));
+        return copy;
+      },
+      async enterStoryMode(convoId, scenarioId) {
+        const convo = get().convos.find((c) => c.id === convoId);
+        const scenario = get().scenarios.find((s) => s.id === scenarioId);
+        if (!convo || !scenario) return;
+        const storyState = {
+          openedAt: convo.storyState?.openedAt,
+          triggeredEventIds: [...(convo.storyState?.triggeredEventIds ?? [])],
+        };
+        // first entry into this scenario: insert the opening narration once
+        const newMsgs: ChatMessage[] = [];
+        if (!storyState.openedAt && scenario.openingStory.trim()) {
+          storyState.openedAt = Date.now();
+          const narrative: ChatMessage = {
+            id: uid("msg"),
+            conversationId: convoId,
+            role: "assistant",
+            content: scenario.openingStory,
+            kind: "narrative",
+            createdAt: now() + 1,
+            status: "ok",
+          };
+          await db.messages.add(narrative);
+          newMsgs.push(narrative);
+        }
+        const patch = { mode: "story" as const, scenarioId, storyState };
+        await db.conversations.update(convoId, patch);
+        set((st) => ({
+          convos: st.convos.map((c) => (c.id === convoId ? { ...c, ...patch } : c)),
+          messages: st.activeConvoId === convoId ? [...st.messages, ...newMsgs] : st.messages,
+        }));
+      },
+      async exitStoryMode(convoId) {
+        await db.conversations.update(convoId, { mode: "chat" });
+        set((st) => ({
+          convos: st.convos.map((c) => (c.id === convoId ? { ...c, mode: "chat" as const } : c)),
+        }));
+      },
+      async triggerNextStoryEvent(convoId) {
+        const convo = get().convos.find((c) => c.id === convoId);
+        const scenario = convo?.scenarioId ? get().scenarios.find((s) => s.id === convo.scenarioId) : null;
+        if (!convo || !scenario) return null;
+        const done = new Set(convo.storyState?.triggeredEventIds ?? []);
+        const next = scenario.events.find((e) => !done.has(e.id));
+        if (!next) return null;
+        const storyState = {
+          openedAt: convo.storyState?.openedAt,
+          triggeredEventIds: [...(convo.storyState?.triggeredEventIds ?? []), next.id],
+        };
+        await db.conversations.update(convoId, { storyState });
+        set((st) => ({
+          convos: st.convos.map((c) => (c.id === convoId ? { ...c, storyState } : c)),
+        }));
+        pendingStoryEvent.current = { convoId, eventId: next.id };
+        return next;
       },
 
       // -------------------------------------------------------

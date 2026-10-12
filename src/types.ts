@@ -86,6 +86,12 @@ export interface Conversation {
   pinned?: boolean;
   summary: string; // rolling summary of older messages
   summarizedUntil: number; // messages older than this are covered by summary
+  /** "story" when the conversation runs on a scenario; default "chat" */
+  mode?: "chat" | "story";
+  /** scenario in use while mode === "story" */
+  scenarioId?: string;
+  /** per-conversation story progress: openedAt marks the narrative as inserted */
+  storyState?: { openedAt?: number; triggeredEventIds: string[] };
   createdAt: number;
   updatedAt: number;
 }
@@ -97,6 +103,8 @@ export interface ChatMessage {
   content: string;
   images?: string[]; // data urls
   replyTo?: { role: "user" | "assistant"; content: string }; // quoted message
+  /** "narrative" messages are story-mode narration (opening story), rendered without actions */
+  kind?: "narrative";
   createdAt: number;
   status?: "ok" | "error" | "aborted";
 }
@@ -125,6 +133,29 @@ export interface PromptTemplate {
   trigger: string; // matched after "/" in the composer
   content: string; // prompt template filled into the input
   createdAt: number;
+}
+
+/** A story-mode script: world setting + opening + keyword-triggered events. */
+export interface ScenarioEvent {
+  id: string;
+  name: string;
+  /** comma-separated keywords matched against the user message */
+  trigger: string;
+  /** narrative content injected as "just happened" when triggered */
+  content: string;
+}
+
+export interface Scenario {
+  id: string;
+  agentId: string;
+  name: string;
+  worldSetting: string;
+  openingStory: string;
+  events: ScenarioEvent[];
+  /** quick-send prompt bubbles shown in story mode */
+  plotPrompts: string[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** Resolved model+provider pair, ready for an API call. */

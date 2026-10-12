@@ -40,6 +40,17 @@ export default function MessageBubble({
   const isUser = msg.role === "user";
   const text = streaming ?? msg.content;
 
+  // story-mode narration (opening story): italic, no actions, never selectable chrome
+  if (msg.kind === "narrative" && streaming === undefined) {
+    return (
+      <div className="msg ai">
+        <div className="body">
+          <div className="bubble narrative">{msg.content}</div>
+        </div>
+      </div>
+    );
+  }
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(msg.content);

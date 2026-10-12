@@ -4,8 +4,9 @@ import { resolveModel } from "../lib/utils";
 import { Avatar, Icon, Menu, Modal, SelectBox, TipFor } from "./ui";
 import MessageBubble from "./MessageBubble";
 import Composer, { filesToDataUrls } from "./Composer";
+import ScenarioEditor from "./ScenarioEditor";
 import { t, tf, dateLocale } from "../i18n";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, Scenario } from "../types";
 
 function isSameDay(a: number, b: number): boolean {
   const da = new Date(a),
@@ -46,6 +47,10 @@ export default function ChatView() {
   const exitMultiSelect = useStore((s) => s.exitMultiSelect);
   const toggleMultiSelect = useStore((s) => s.toggleMultiSelect);
   const deleteSelected = useStore((s) => s.deleteSelected);
+  const scenarios = useStore((s) => s.scenarios);
+  const enterStoryMode = useStore((s) => s.enterStoryMode);
+  const exitStoryMode = useStore((s) => s.exitStoryMode);
+  const saveScenario = useStore((s) => s.saveScenario);
 
   const [showSummary, setShowSummary] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -53,6 +58,8 @@ export default function ChatView() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setQuery] = useState("");
   const [matchIdx, setMatchIdx] = useState(0);
+  const [storyPicker, setStoryPicker] = useState(false);
+  const [editingScenario, setEditingScenario] = useState<{ agentId: string; scenario: Scenario | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
   const dragCounter = useRef(0);
@@ -134,6 +141,11 @@ export default function ChatView() {
   const chatModels = models.filter((m) => m.roles.includes("chat"));
   const providerName = (id: string) => providers.find((p) => p.id === id)?.name ?? "?";
 
+  // story mode
+  const storyScenario =
+    convo.mode === "story" && convo.scenarioId ? scenarios.find((s) => s.id === convo.scenarioId) ?? null : null;
+  const agentScenarios = scenarios.filter((s) => s.agentId === agent.id);
+
   // greeting suggestions: conversation has only the greeting so far
   const showSuggests =
     messages.length === 1 &&
@@ -149,7 +161,14 @@ export default function ChatView() {
         </button>
         <Avatar agent={agent} size={38} radius={12} />
         <div>
-          <div className="title">{agent.name}</div>
+          <div className="title">
+            {agent.name}
+            {storyScenario && (
+              <span className="story-badge" title={tf("storyBadgeTip", { name: storyScenario.name })}>
+                📖 {storyScenario.name}
+              </span>
+            )}
+          </div>
           {chatRm ? (
             <Menu
               align="start"
@@ -185,6 +204,28 @@ export default function ChatView() {
           )}
         </div>
         <div className="spacer" />
+        <TipFor text={storyScenario ? t("storyModeOn") : t("storyModeTip")}>
+          <button
+            className={`icon-btn ${storyScenario ? "active" : ""}`}
+            onClick={() => {
+              if (storyScenario) {
+                useStore
+                  .getState()
+                  .askConfirm({
+                    title: t("exitStoryTitle"),
+                    message: t("exitStoryMsg"),
+                    confirmText: t("storyModeOn"),
+                    danger: false,
+                  })
+                  .then((ok) => { if (ok) exitStoryMode(convo.id); });
+              } else {
+                setStoryPicker(true);
+              }
+            }}
+          >
+            <Icon name="book" />
+          </button>
+        </TipFor>
         <TipFor text={t("searchTip")}>
           <button
             className={`icon-btn ${searchOpen ? "active" : ""}`}
@@ -394,6 +435,54 @@ export default function ChatView() {
             )}
           </div>
         </Modal>
+      )}
+
+      {storyPicker && (
+        <Modal title={t("storyPickerTitle")} onClose={() => setStoryPicker(false)}>
+          {agentScenarios.length === 0 && (
+            <div style={{ color: "var(--text-3)", fontSize: 13, textAlign: "center", padding: "8px 0 12px" }}>
+              {t("noScenarios")}
+            </div>
+          )}
+          {agentScenarios.map((s) => (
+            <div
+              key={s.id}
+              className="provider-card"
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                enterStoryMode(convo.id, s.id);
+                setStoryPicker(false);
+              }}
+            >
+              <div className="logo">📖</div>
+              <div className="info">
+                <div className="name">{s.name}</div>
+                <div className="meta">{tf("nEvents", { n: s.events.length })}</div>
+              </div>
+              <button
+                className="icon-btn"
+                title={t("editScenario")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingScenario({ agentId: agent.id, scenario: s });
+                }}
+              >
+                <Icon name="edit" size={17} />
+              </button>
+            </div>
+          ))}
+          <button
+            className="btn"
+            style={{ width: "100%", marginTop: 8 }}
+            onClick={() => setEditingScenario({ agentId: agent.id, scenario: null })}
+          >
+            <Icon name="plus" size={15} /> {t("newScenario")}
+          </button>
+        </Modal>
+      )}
+
+      {editingScenario && (
+        <ScenarioEditor agentId={editingScenario.agentId} scenario={editingScenario.scenario} onClose={() => setEditingScenario(null)} />
       )}
     </>
   );

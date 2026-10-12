@@ -9,8 +9,17 @@ import type {
   MemoryKind,
   ModelConfig,
   Provider,
+  Scenario,
+  ScenarioEvent,
   Settings,
 } from "../types";
+
+/** Story-mode injection payload handed to the context builder. */
+export interface StoryContext {
+  scenario: Scenario;
+  /** events fired on this very turn, injected as "just happened" */
+  newlyTriggered: ScenarioEvent[];
+}
 
 // ================================================================
 // The memory engine.
@@ -31,7 +40,8 @@ export function buildSystemPrompt(
   agent: Agent,
   convo: Conversation,
   settings: Settings,
-  memories: MemoryItem[]
+  memories: MemoryItem[],
+  story?: StoryContext
 ): string {
   const parts: string[] = [];
   parts.push(agent.persona.trim() || NEUTRAL_PERSONA);
@@ -40,6 +50,33 @@ export function buildSystemPrompt(
   if (settings.userName.trim()) profileBits.push(`用户的称呼：${settings.userName.trim()}`);
   if (settings.userProfile.trim()) profileBits.push(`用户的自我介绍：${settings.userProfile.trim()}`);
   if (profileBits.length) parts.push(`## 关于用户\n${profileBits.join("\n")}`);
+
+  if (story) {
+    const { scenario, newlyTriggered } = story;
+    if (scenario.worldSetting.trim()) parts.push(`## 世界设定\n${scenario.worldSetting.trim()}`);
+    if (scenario.openingStory.trim()) parts.push(`## 开场剧情\n${scenario.openingStory.trim()}`);
+    const triggeredIds = convo.storyState?.triggeredEventIds ?? [];
+    const happened = scenario.events.filter(
+      (e) => triggeredIds.includes(e.id) && !newlyTriggered.some((n) => n.id === e.id)
+    );
+    if (happened.length) {
+      parts.push(`## 已发生的剧情\n${happened.map((e) => `- ${e.name}：${e.content}`).join("\n")}`);
+    }
+    if (newlyTriggered.length) {
+      parts.push(
+        `## 刚发生的剧情\n${newlyTriggered
+          .map((e) => e.content)
+          .join("\n")}\n\n请在本轮回复中自然地推进这段剧情，不要生硬复述设定。`
+      );
+    }
+    parts.push(
+      "## 叙事约束\n当前处于剧情模式：一切对话都在上述世界观内展开。以第二人称对用户叙事，保持你的人设口吻；剧情推进要自然，不要一次罗列所有设定；当用户想跳出世界观时，温和地把剧情拉回来。"
+    );
+    if (convo.summary.trim()) {
+      parts.push(`## 本对话更早内容的回顾\n${convo.summary.trim()}`);
+    }
+    return parts.join("\n\n");
+  }
 
   if (memories.length) {
     const lines = memories
@@ -136,10 +173,12 @@ export async function buildContextMessages(
   recentMessages: ChatMessage[],
   settings: Settings,
   models: ModelConfig[],
-  providers: Provider[]
+  providers: Provider[],
+  story?: StoryContext
 ): Promise<ApiMessage[]> {
   let memories: MemoryItem[] = [];
-  if (agent.memoryEnabled) {
+  // story mode: never inject long-term memories (fiction must not bleed into real memory)
+  if (agent.memoryEnabled && !story) {
     const embRm = resolveEmbedding(models, providers, settings, agent);
     const query = recentMessages
       .filter((m) => m.role === "user")
@@ -153,7 +192,7 @@ export async function buildContextMessages(
     }
   }
 
-  const system = buildSystemPrompt(agent, convo, settings, memories);
+  const system = buildSystemPrompt(agent, convo, settings, memories, story);
 
   const gen = settings.genParams ?? { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
   const historyWindow = recentMessages.slice(-Math.max(4, gen.contextTurns * 2));
