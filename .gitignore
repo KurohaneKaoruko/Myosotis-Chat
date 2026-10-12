@@ -16,5 +16,18 @@ Thumbs.db
 
 # AI tooling (local only, never publish)
 openspec/
-.opencode/
-.agents/
+
+# ---------------------------------------------------------------
+# Dot-directories: ignore every one of them, at any depth.
+# This covers .workbuddy-ai/, .opencode/, .agents/, .vscode/, .idea/ ...
+# ---------------------------------------------------------------
+.*/
+
+# ...then explicitly re-include the dot-directories we do commit.
+!.github/
+
+# Dot-files are not matched by ".*/" (that pattern only matches
+# directories), so they stay tracked by default. The ones we commit are
+# listed here anyway, so the intent survives future pattern changes.
+!.gitignore
+!src-tauri/.gitignore
