@@ -320,6 +320,13 @@ const zhCN = {
   needNameAndUrl: "请填写名称和接口地址",
   manageProvider: "管理「{name}」",
   addProviderTitle: "添加模型服务",
+  keyPool: "Key 池（可选）",
+  keyPoolPh: "每行一个 API Key；与上方主 Key 一起自动轮换",
+  keyPoolDesc: "多个 Key 会按请求自动轮换，单个 Key 失效不影响整体",
+  testConn: "测试连通",
+  testing: "测试中…",
+  probeOkMs: "可达 · {ms}ms",
+  probeUnreachable: "不可达：{detail}",
 
   // onboarding
   obTitle: "Myosotis",
@@ -415,6 +422,9 @@ const zhCN = {
   srvError: "服务返回错误",
   imgParseFail: "图片格式无法解析",
   noAnthropicEmbed: "Anthropic 暂不提供向量模型，请使用 OpenAI 兼容或 Gemini 的 Embedding 模型",
+  probeOk: "连接正常",
+  probeTimeout: "请求超时",
+  probeEmpty: "已连通（返回内容为空）",
   encNoPassword: "已开启加密但未设置备份密码",
   notJson: "文件不是有效的 JSON",
   notMyosotisBackup: "不是 Myosotis 的备份文件",

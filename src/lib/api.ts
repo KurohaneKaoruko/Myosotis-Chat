@@ -1,5 +1,5 @@
 import type { Provider, ResolvedModel } from "../types";
-import { trimUrl } from "./utils";
+import { trimUrl, friendlyError } from "./utils";
 import { t } from "../i18n";
 
 // ================================================================
@@ -18,19 +18,46 @@ export interface ChatOptions {
   signal?: AbortSignal;
   temperature?: number;
   maxTokens?: number;
+  /** seed for key-pool rotation; same seed always picks the same key */
+  keySeed?: string;
 }
 
-function authHeaders(p: Provider): Record<string, string> {
+// ----------------------------------------------------------------
+// Key pool: a provider may hold several API keys; we rotate over them
+// deterministically per request so a single dead key doesn't break
+// everything, while identical requests stay on the same key.
+// ----------------------------------------------------------------
+export function providerKeyPool(p: Provider): string[] {
+  const pool = [p.apiKey, ...(p.keys ?? [])]
+    .map((k) => (k ?? "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(pool));
+}
+
+/** FNV-1a style hash → stable index into the provider's key pool. */
+export function pickProviderKey(p: Provider, seed: string): string {
+  const pool = providerKeyPool(p);
+  if (!pool.length) return "";
+  let h = 0x811c9dc5;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return pool[Math.abs(h) % pool.length];
+}
+
+function authHeaders(p: Provider, key?: string): Record<string, string> {
+  const k = key ?? p.apiKey;
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (p.protocol === "openai") {
-    if (p.apiKey) h["Authorization"] = `Bearer ${p.apiKey}`;
+    if (k) h["Authorization"] = `Bearer ${k}`;
   } else if (p.protocol === "anthropic") {
-    h["x-api-key"] = p.apiKey;
+    h["x-api-key"] = k;
     h["anthropic-version"] = "2023-06-01";
     // allow direct browser calls
     h["anthropic-dangerous-direct-browser-access"] = "true";
   } else if (p.protocol === "gemini") {
-    if (p.apiKey) h["x-goog-api-key"] = p.apiKey;
+    if (k) h["x-goog-api-key"] = k;
   }
   return h;
 }
@@ -183,7 +210,7 @@ export async function chatComplete(rm: ResolvedModel, messages: ApiMessage[], op
 
   const res = await fetch(url, {
     method: "POST",
-    headers: authHeaders(p),
+    headers: authHeaders(p, pickProviderKey(p, opts.keySeed ?? model.name)),
     body: JSON.stringify(body),
     signal: opts.signal,
   });
@@ -235,7 +262,7 @@ export async function embedText(rm: ResolvedModel, text: string): Promise<number
   if (p.protocol === "openai") {
     const res = await fetch(`${base}/embeddings`, {
       method: "POST",
-      headers: authHeaders(p),
+      headers: authHeaders(p, pickProviderKey(p, model.name)),
       body: JSON.stringify({ model: model.name, input: text }),
     });
     if (!res.ok) await readError(res);
@@ -245,7 +272,7 @@ export async function embedText(rm: ResolvedModel, text: string): Promise<number
   if (p.protocol === "gemini") {
     const res = await fetch(`${base}/v1beta/models/${encodeURIComponent(model.name)}:embedContent`, {
       method: "POST",
-      headers: authHeaders(p),
+      headers: authHeaders(p, pickProviderKey(p, model.name)),
       body: JSON.stringify({ model: `models/${model.name}`, content: { parts: [{ text }] } }),
     });
     if (!res.ok) await readError(res);
@@ -260,20 +287,21 @@ export async function embedText(rm: ResolvedModel, text: string): Promise<number
 // ----------------------------------------------------------------
 export async function listRemoteModels(p: Provider): Promise<{ id: string; label: string }[]> {
   const base = trimUrl(p.baseUrl);
+  const headers = authHeaders(p, pickProviderKey(p, "list-models"));
   if (p.protocol === "openai") {
-    const res = await fetch(`${base}/models`, { headers: authHeaders(p) });
+    const res = await fetch(`${base}/models`, { headers });
     if (!res.ok) await readError(res);
     const j = await res.json();
     return (j.data ?? []).map((m: any) => ({ id: m.id, label: m.id }));
   }
   if (p.protocol === "anthropic") {
-    const res = await fetch(`${base}/v1/models?limit=100`, { headers: authHeaders(p) });
+    const res = await fetch(`${base}/v1/models?limit=100`, { headers });
     if (!res.ok) await readError(res);
     const j = await res.json();
     return (j.data ?? []).map((m: any) => ({ id: m.id, label: m.display_name || m.id }));
   }
   // gemini
-  const res = await fetch(`${base}/v1beta/models?pageSize=200`, { headers: authHeaders(p) });
+  const res = await fetch(`${base}/v1beta/models?pageSize=200`, { headers });
   if (!res.ok) await readError(res);
   const j = await res.json();
   return (j.models ?? [])
@@ -288,7 +316,7 @@ export async function ttsSynthesize(rm: ResolvedModel, text: string): Promise<Bl
   const base = trimUrl(rm.provider.baseUrl);
   const res = await fetch(`${base}/audio/speech`, {
     method: "POST",
-    headers: authHeaders(rm.provider),
+    headers: authHeaders(rm.provider, pickProviderKey(rm.provider, rm.model.name)),
     body: JSON.stringify({ model: rm.model.name, input: text, voice: "alloy", response_format: "mp3" }),
   });
   if (!res.ok) await readError(res);
@@ -297,15 +325,78 @@ export async function ttsSynthesize(rm: ResolvedModel, text: string): Promise<Bl
 
 export async function sttTranscribe(rm: ResolvedModel, audio: Blob, filename = "audio.webm"): Promise<string> {
   const base = trimUrl(rm.provider.baseUrl);
+  const key = pickProviderKey(rm.provider, rm.model.name);
   const fd = new FormData();
   fd.append("model", rm.model.name);
   fd.append("file", audio, filename);
   const res = await fetch(`${base}/audio/transcriptions`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${rm.provider.apiKey}` },
+    headers: key ? { Authorization: `Bearer ${key}` } : undefined,
     body: fd,
   });
   if (!res.ok) await readError(res);
   const j = await res.json();
   return j.text ?? "";
+}
+
+// ----------------------------------------------------------------
+// Connectivity probes (ported from Girl-Ai-Agent's provider/model probe).
+// They never throw: an unreachable endpoint is a normal result, not an
+// error, so the UI can show reachable/latency/detail uniformly.
+// ----------------------------------------------------------------
+export interface ProbeResult {
+  reachable: boolean;
+  latencyMs: number;
+  detail: string;
+}
+
+/** Lightweight reachability check for a provider endpoint. */
+export async function probeProvider(p: Provider): Promise<ProbeResult> {
+  const base = trimUrl(p.baseUrl);
+  const key = providerKeyPool(p)[0] ?? "";
+  const headers = authHeaders(p, key);
+  const url =
+    p.protocol === "openai"
+      ? `${base}/models`
+      : p.protocol === "anthropic"
+        ? `${base}/v1/models?limit=1`
+        : `${base}/v1beta/models?pageSize=1`;
+  const t0 = performance.now();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetch(url, { headers, signal: ctl.signal });
+    const latencyMs = Math.round(performance.now() - t0);
+    if (!res.ok) return { reachable: false, latencyMs, detail: `${res.status} ${res.statusText}` };
+    return { reachable: true, latencyMs, detail: t("probeOk") };
+  } catch (e: any) {
+    const latencyMs = Math.round(performance.now() - t0);
+    const detail = e?.name === "AbortError" ? t("probeTimeout") : friendlyError(e);
+    return { reachable: false, latencyMs, detail };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Callability check for a concrete model via one minimal chat request. */
+export async function probeModel(rm: ResolvedModel): Promise<ProbeResult> {
+  const t0 = performance.now();
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const out = await chatComplete(rm, [{ role: "user", text: "ping" }], {
+      maxTokens: 8,
+      temperature: 0,
+      signal: ctl.signal,
+      keySeed: rm.model.id,
+    });
+    const latencyMs = Math.round(performance.now() - t0);
+    return { reachable: true, latencyMs, detail: out.trim() ? t("probeOk") : t("probeEmpty") };
+  } catch (e: any) {
+    const latencyMs = Math.round(performance.now() - t0);
+    const detail = e?.name === "AbortError" ? t("probeTimeout") : friendlyError(e);
+    return { reachable: false, latencyMs, detail };
+  } finally {
+    clearTimeout(timer);
+  }
 }

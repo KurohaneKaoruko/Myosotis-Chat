@@ -645,6 +645,7 @@ export const useStore = create<AppState>()(
             signal: controller.signal,
             temperature: gen.temperature,
             maxTokens: gen.maxTokens,
+            keySeed: `${agent.id}:${trimmed}`,
             onDelta: (d) => set((s) => ({ streamText: s.streamText + d })),
           });
         } catch (e: any) {

@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useStore } from "../store";
 import { db } from "../lib/db";
-import { listRemoteModels } from "../lib/api";
+import { listRemoteModels, probeProvider, probeModel, type ProbeResult } from "../lib/api";
 import { friendlyError } from "../lib/utils";
 import { Modal, Icon, SelectBox, Toggle, SliderRow } from "./ui";
 import { DEFAULT_SETTINGS, type PromptTemplate } from "../types";
-import type { ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
+import type { ModelConfig, ModelRole, Protocol, Provider, ThemeId, ThemeMode } from "../types";
 import { t, tf, dateLocale } from "../i18n";
 import type { Dict } from "../i18n/zh-CN";
 
@@ -60,8 +60,7 @@ const TEMPLATE_GROUPS: { labelKey: keyof Dict; items: { name: string; protocol: 
   },
 ];
 
-const ROLE_ROWS: { role: ModelRole; labelKey: keyof Dict; descKey: keyof Dict }[] = [
-  { role: "chat", labelKey: "roleChat", descKey: "roleChatDesc" },
+const ROLE_ROWS: { role: ModelRole; labelKey: keyof Dict; descKey: keyof Dict }[] = [  { role: "chat", labelKey: "roleChat", descKey: "roleChatDesc" },
   { role: "vision", labelKey: "roleVision", descKey: "roleVisionDesc" },
   { role: "embedding", labelKey: "roleEmbed", descKey: "roleEmbedDesc" },
   { role: "tts", labelKey: "roleTts", descKey: "roleTtsDesc" },
@@ -78,8 +77,17 @@ const THEMES: { id: ThemeId; nameKey: keyof Dict; colors: string }[] = [
   { id: "ink", nameKey: "themeInk", colors: "linear-gradient(135deg,#475569,#334155)" },
 ];
 
-export default function SettingsView() {
-  return (
+/** One-line rendering of a probe result (reachable · latency / failure detail). */
+function fmtProbe(r: ProbeResult): string {
+  return r.reachable ? tf("probeOkMs", { ms: r.latencyMs }) : tf("probeUnreachable", { detail: r.detail });
+}
+
+function probeColor(r: ProbeResult | "loading"): string {
+  if (r === "loading") return "var(--text-3)";
+  return r.reachable ? "#16a34a" : "#dc2626";
+}
+
+export default function SettingsView() {  return (
     <div className="page">
       <div className="page-inner">
         <div className="page-title">
@@ -113,6 +121,13 @@ function ProvidersCard() {
   const models = useStore((s) => s.models);
   const removeProvider = useStore((s) => s.removeProvider);
   const [editing, setEditing] = useState<Provider | "new" | null>(null);
+  const [probes, setProbes] = useState<Record<string, ProbeResult | "loading">>({});
+
+  const runProbe = async (p: Provider) => {
+    setProbes((s) => ({ ...s, [p.id]: "loading" }));
+    const r = await probeProvider(p);
+    setProbes((s) => ({ ...s, [p.id]: r }));
+  };
 
   return (
     <div className="card">
@@ -140,8 +155,22 @@ function ProvidersCard() {
               </div>
               <div className="meta">
                 {p.baseUrl} · {tf("nModels", { n: count })}
+                {(p.keys?.length ?? 0) > 0 && ` · 🔑 ×${(p.keys?.length ?? 0) + (p.apiKey ? 1 : 0)}`}
               </div>
+              {probes[p.id] && (
+                <div className="meta" style={{ color: probeColor(probes[p.id]), whiteSpace: "normal" }}>
+                  {probes[p.id] === "loading" ? t("testing") : fmtProbe(probes[p.id] as ProbeResult)}
+                </div>
+              )}
             </div>
+            <button
+              className="icon-btn"
+              title={t("testConn")}
+              disabled={probes[p.id] === "loading"}
+              onClick={() => runProbe(p)}
+            >
+              <Icon name="zap" size={16} />
+            </button>
             <button className="icon-btn" title={t("manageModels")} onClick={() => setEditing(p)}>
               <Icon name="settings" size={17} />
             </button>
@@ -187,6 +216,7 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
   const [protocol, setProtocol] = useState<Protocol>(provider?.protocol ?? "openai");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
   const [apiKey, setApiKey] = useState(provider?.apiKey ?? "");
+  const [keysText, setKeysText] = useState((provider?.keys ?? []).join("\n"));
   const [showKey, setShowKey] = useState(false);
   const [remote, setRemote] = useState<{ id: string; label: string }[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -210,7 +240,13 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
     setLoading(true);
     try {
       let p = provider;
-      const patch = { name: name.trim(), protocol, baseUrl: baseUrl.trim(), apiKey: apiKey.trim() };
+      const patch = {
+        name: name.trim(),
+        protocol,
+        baseUrl: baseUrl.trim(),
+        apiKey: apiKey.trim(),
+        keys: keysText.split("\n").map((k) => k.trim()).filter(Boolean),
+      };
       if (p) {
         await updateProvider(p.id, patch);
         p = { ...p, ...patch };
@@ -322,6 +358,20 @@ function ProviderForm({ provider, onClose }: { provider: Provider | null; onClos
       </div>
 
       <div className="field">
+        <label>{t("keyPool")}</label>
+        <textarea
+          className="input"
+          rows={2}
+          value={keysText}
+          onChange={(e) => setKeysText(e.target.value)}
+          placeholder={t("keyPoolPh")}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div className="desc">{t("keyPoolDesc")}</div>
+      </div>
+
+      <div className="field">
         <label>{t("baseUrl")}</label>
         <input className="input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={placeholder} />
         <div className="desc">{t("baseUrlDesc")}</div>
@@ -379,8 +429,17 @@ function modelsOfProvider(id: string) {
 
 function ExistingModels({ providerId }: { providerId: string }) {
   const models = useStore((s) => s.models).filter((m) => m.providerId === providerId);
+  const providers = useStore((s) => s.providers);
   const removeModel = useStore((s) => s.removeModel);
   const updateModel = useStore((s) => s.updateModel);
+  const [probes, setProbes] = useState<Record<string, ProbeResult | "loading">>({});
+  const runModelProbe = async (m: ModelConfig) => {
+    const provider = providers.find((p) => p.id === m.providerId);
+    if (!provider) return;
+    setProbes((s) => ({ ...s, [m.id]: "loading" }));
+    const r = await probeModel({ model: m, provider });
+    setProbes((s) => ({ ...s, [m.id]: r }));
+  };
   if (!models.length) return null;
   const ROLE_LABELS: Record<string, keyof Dict> = { chat: "roleShortChat", vision: "roleShortVision", embedding: "roleShortEmbed", tts: "roleShortTts", stt: "roleShortStt" };
   return (
@@ -391,6 +450,11 @@ function ExistingModels({ providerId }: { providerId: string }) {
           <div className="name" title={m.name}>
             {m.label}
           </div>
+          {probes[m.id] && (
+            <span style={{ fontSize: 10, whiteSpace: "nowrap", flexShrink: 0, color: probeColor(probes[m.id]) }}>
+              {probes[m.id] === "loading" ? t("testing") : fmtProbe(probes[m.id] as ProbeResult)}
+            </span>
+          )}
           <div className="roles">
             {(["chat", "vision", "embedding", "tts", "stt"] as ModelRole[]).map((r) => (
               <button
@@ -408,6 +472,15 @@ function ExistingModels({ providerId }: { providerId: string }) {
               </button>
             ))}
           </div>
+          <button
+            className="icon-btn"
+            style={{ width: 28, height: 28 }}
+            title={t("testConn")}
+            disabled={probes[m.id] === "loading"}
+            onClick={() => runModelProbe(m)}
+          >
+            <Icon name="zap" size={14} />
+          </button>
           <button className="icon-btn danger" style={{ width: 28, height: 28 }} onClick={() => removeModel(m.id)} title={t("deleteModelTitle")}>
             <Icon name="trash" size={14} />
           </button>

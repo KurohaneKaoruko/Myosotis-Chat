@@ -12,6 +12,8 @@ export interface Provider {
   protocol: Protocol;
   baseUrl: string;
   apiKey: string;
+  /** extra keys rotated together with `apiKey` (a key pool) */
+  keys?: string[];
   createdAt: number;
 }
 
