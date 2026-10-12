@@ -4,14 +4,16 @@ import { toast } from "sonner";
 import { setLanguage, t, tf, dateLocale } from "./i18n";
 import { db, exportAll, importAll } from "./lib/db";
 import { mergeAgentConversations } from "./lib/migrate";
-import { chatComplete } from "./lib/api";
-import { buildContextMessages, extractMemories, maybeSummarize, generateTitle } from "./lib/memory";
+import { chatComplete, embedText } from "./lib/api";
+import { buildContextMessages, extractMemories, maybeSummarize, generateTitle, retrieveMemories } from "./lib/memory";
+import { buildGroupContext, replyingParticipants, visibleAgentIds } from "./lib/group";
 import { uid, now, resolveModel, resolveGenParams, friendlyError, plainPreview } from "./lib/utils";
 import {
   DEFAULT_SETTINGS,
   type Agent,
   type ChatMessage,
   type Conversation,
+  type GroupParticipant,
   type MemoryItem,
   type ModelConfig,
   type ModelRole,
@@ -54,6 +56,8 @@ interface AppState {
   editingAgentId: string | null; // agent editor open
   sidebarOpen: boolean; // mobile drawer
   streamingConvoId: string | null;
+  /** group chat: which participant is currently composing a reply */
+  streamingAgentId: string | null;
   streamText: string;
   memoryAgentFilter: string | null;
   confirmOptions: { title: string; message: string; confirmText?: string; danger?: boolean } | null;
@@ -104,6 +108,16 @@ interface AppState {
   renameConversation: (id: string, title: string) => Promise<void>;
   clearConversation: (id: string) => Promise<void>;
   exportConversation: (id: string) => Promise<void>;
+
+  // ----- group chat -----
+  createGroupConversation: (title: string, participants: GroupParticipant[]) => Promise<string>;
+  updateGroupConversation: (id: string, patch: Partial<Pick<Conversation, "title" | "participants">>) => Promise<void>;
+  sendGroupTurn: (
+    convoId: string,
+    text: string,
+    images?: string[],
+    replyTo?: { role: "user" | "assistant"; content: string }
+  ) => Promise<void>;
 
   // ----- messaging -----
   send: (text: string, images?: string[], replyTo?: { role: "user" | "assistant"; content: string }) => Promise<void>;
@@ -165,6 +179,7 @@ export const useStore = create<AppState>()(
       editingAgentId: null,
       sidebarOpen: false,
       streamingConvoId: null,
+      streamingAgentId: null,
       streamText: "",
       memoryAgentFilter: null,
       confirmOptions: null,
@@ -406,18 +421,34 @@ export const useStore = create<AppState>()(
       },
       async deleteAgent(id) {
         await db.transaction("rw", db.agents, db.conversations, db.messages, db.memories, db.scenarios, async () => {
-          const convoIds = await db.conversations.where("agentId").equals(id).primaryKeys();
+          // only direct conversations belong to the agent; group chats survive
+          const owned = await db.conversations.where("agentId").equals(id).toArray();
+          const convoIds = owned.filter((c) => c.kind !== "group").map((c) => c.id);
           await db.conversations.bulkDelete(convoIds);
           await db.messages.where("conversationId").anyOf(convoIds).delete();
           await db.memories.where("agentId").equals(id).delete();
           await db.scenarios.where("agentId").equals(id).delete();
           await db.agents.delete(id);
         });
-        const convos = get().convos.filter((c) => c.agentId !== id);
+        // drop the agent from every group it was part of
+        const groups = get().convos.filter(
+          (c) => c.kind === "group" && (c.participants ?? []).some((p) => p.agentId === id)
+        );
+        const groupPatches = new Map<string, GroupParticipant[]>();
+        for (const g of groups) {
+          const participants = (g.participants ?? [])
+            .filter((p) => p.agentId !== id)
+            .map((p, i) => ({ ...p, sortOrder: i }));
+          groupPatches.set(g.id, participants);
+          await db.conversations.update(g.id, { participants });
+        }
+        const convos = get()
+          .convos.filter((c) => c.kind === "group" || c.agentId !== id)
+          .map((c) => (groupPatches.has(c.id) ? { ...c, participants: groupPatches.get(c.id)! } : c));
         const activeLost = convos.every((c) => c.id !== get().activeConvoId);
         set({
           agents: get().agents.filter((a) => a.id !== id),
-          convos,
+          convos: sortConvos(convos),
           scenarios: get().scenarios.filter((s) => s.agentId !== id),
           activeConvoId: activeLost ? convos[0]?.id ?? null : get().activeConvoId,
           editingAgentId: null,
@@ -592,13 +623,191 @@ export const useStore = create<AppState>()(
       },
 
       // -------------------------------------------------------
+      // Group chat (multi-agent round table)
+      // -------------------------------------------------------
+      async createGroupConversation(title, participants) {
+        const convo: Conversation = {
+          id: uid("cnv"),
+          // groups are addressed through participants, not a single owner
+          agentId: "",
+          title: title.trim() || t("newGroup"),
+          lastMessage: "",
+          messageCount: 0,
+          kind: "group",
+          participants: participants.map((p, i) => ({ ...p, sortOrder: i })),
+          summary: "",
+          summarizedUntil: 0,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        await db.conversations.add(convo);
+        set((s) => ({
+          convos: sortConvos([convo, ...s.convos]),
+          activeConvoId: convo.id,
+          messages: [],
+          view: "chat",
+          sidebarOpen: false,
+        }));
+        return convo.id;
+      },
+      async updateGroupConversation(id, patch) {
+        const next = patch.participants
+          ? { ...patch, participants: patch.participants.map((p, i) => ({ ...p, sortOrder: i })) }
+          : patch;
+        await db.conversations.update(id, next);
+        set((s) => ({ convos: s.convos.map((c) => (c.id === id ? { ...c, ...next } : c)) }));
+      },
+      async sendGroupTurn(convoId, text, images, replyTo) {
+        const convo = get().convos.find((c) => c.id === convoId);
+        if (!convo || convo.kind !== "group") return;
+        const participants = convo.participants ?? [];
+        const { models, providers, settings, agents } = get();
+        if (!participants.length) {
+          get().showToast(t("groupNoParticipants"), "error");
+          return;
+        }
+        const trimmed = text.trim();
+        if (!trimmed && !images?.length) return;
+
+        // 1. persist the user message together with who may see it
+        const visible = visibleAgentIds(participants, trimmed, agents);
+        const userMsg: ChatMessage = {
+          id: uid("msg"),
+          conversationId: convo.id,
+          role: "user",
+          content: trimmed,
+          images: images?.length ? images : undefined,
+          replyTo: replyTo ?? undefined,
+          visibleTo: visible,
+          createdAt: now(),
+          status: "ok",
+        };
+        await db.messages.add(userMsg);
+        if (replyTo) set({ replyTo: null });
+        set((s) => ({ messages: [...s.messages, userMsg] }));
+
+        const refreshMeta = async () => {
+          const all = await db.messages.where("conversationId").equals(convo.id).sortBy("createdAt");
+          const last = all[all.length - 1];
+          const patch: Partial<Conversation> = {
+            updatedAt: now(),
+            lastMessage: last ? plainPreview(last.content).slice(0, 40) || "…" : "",
+            messageCount: all.length,
+            lastMessageRole: last?.role,
+          };
+          if (convo.title === t("newGroup") && trimmed) {
+            patch.title = plainPreview(trimmed).slice(0, 16) || convo.title;
+          }
+          await db.conversations.update(convo.id, patch);
+          set((s) => ({
+            convos: sortConvos(s.convos.map((c) => (c.id === convo.id ? { ...c, ...patch } : c))),
+          }));
+        };
+
+        // 2. decide who answers this message
+        const repliers = replyingParticipants(participants, trimmed, agents);
+        if (!repliers.length) {
+          await refreshMeta();
+          get().showToast(t("groupNoReply"), "info");
+          return;
+        }
+
+        // 3. embed the query once so every participant can reuse it
+        const embRm = resolveModel("embedding", models, providers, settings);
+        let qvec: number[] | null = null;
+        if (embRm && trimmed) {
+          try {
+            qvec = await embedText(embRm, trimmed.slice(0, 500));
+          } catch {
+            qvec = null;
+          }
+        }
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+        set({ streamingConvoId: convo.id, streamingAgentId: null, streamText: "" });
+
+        // 4. let each participant answer in turn, each seeing the previous replies
+        for (const p of repliers) {
+          if (controller.signal.aborted) break;
+          const agent = agents.find((a) => a.id === p.agentId);
+          if (!agent) continue;
+          const rm = resolveModel("chat", models, providers, settings, agent.models);
+          if (!rm) {
+            get().showToast(tf("groupAgentNoModel", { name: agent.name }), "error");
+            continue;
+          }
+          let memories: MemoryItem[] = [];
+          if (agent.memoryEnabled) {
+            try {
+              memories = await retrieveMemories(agent.id, trimmed, embRm, qvec);
+            } catch {
+              memories = [];
+            }
+          }
+          const all = await db.messages.where("conversationId").equals(convo.id).sortBy("createdAt");
+          const context = buildGroupContext(agent, convo, all, agents, settings, memories);
+          const gen = resolveGenParams("reply", settings, agent);
+
+          set({ streamingAgentId: agent.id, streamText: "" });
+          let full = "";
+          let status: ChatMessage["status"] = "ok";
+          try {
+            full = await chatComplete(rm, context, {
+              signal: controller.signal,
+              temperature: gen.temperature,
+              maxTokens: gen.maxTokens,
+              topP: gen.topP,
+              frequencyPenalty: gen.frequencyPenalty,
+              keySeed: `${agent.id}:${trimmed}`,
+              onDelta: (d) => set((s) => ({ streamText: s.streamText + d })),
+            });
+          } catch (e: any) {
+            if (e?.name === "AbortError") {
+              status = "aborted";
+              full = get().streamText;
+            } else {
+              status = "error";
+              full = friendlyError(e);
+            }
+          }
+          if (!full.trim() && status === "error") {
+            set({ streamText: "" });
+            continue;
+          }
+          const aiMsg: ChatMessage = {
+            id: uid("msg"),
+            conversationId: convo.id,
+            role: "assistant",
+            agentId: agent.id,
+            content: full,
+            visibleTo: visible,
+            createdAt: now(),
+            status,
+          };
+          await db.messages.add(aiMsg);
+          set((s) => ({ messages: [...s.messages, aiMsg], streamText: "" }));
+        }
+
+        abortRef.current = null;
+        set({ streamingConvoId: null, streamingAgentId: null, streamText: "" });
+        await refreshMeta();
+      },
+
+      // -------------------------------------------------------
       async send(text, images, replyTo) {
         const { activeConvoId } = get();
         if (!activeConvoId) return;
         if (get().streamingConvoId) return;
         const convo = get().convos.find((c) => c.id === activeConvoId);
-        const agent = get().agents.find((a) => a.id === convo?.agentId);
-        if (!convo || !agent) return;
+        if (!convo) return;
+        // multi-agent round table has its own orchestration
+        if (convo.kind === "group") {
+          await get().sendGroupTurn(convo.id, text, images, replyTo);
+          return;
+        }
+        const agent = get().agents.find((a) => a.id === convo.agentId);
+        if (!agent) return;
 
         const trimmed = text.trim();
         if (!trimmed && !images?.length) return;

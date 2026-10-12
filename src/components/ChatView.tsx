@@ -5,8 +5,9 @@ import { Avatar, Icon, Menu, Modal, SelectBox, TipFor } from "./ui";
 import MessageBubble from "./MessageBubble";
 import Composer, { filesToDataUrls } from "./Composer";
 import ScenarioEditor from "./ScenarioEditor";
+import GroupEditor from "./GroupEditor";
 import { t, tf, dateLocale } from "../i18n";
-import type { ChatMessage, Scenario } from "../types";
+import type { Agent, ChatMessage, Scenario } from "../types";
 
 function isSameDay(a: number, b: number): boolean {
   const da = new Date(a),
@@ -30,6 +31,7 @@ export default function ChatView() {
   const messages = useStore((s) => s.messages);
   const activeConvoId = useStore((s) => s.activeConvoId);
   const streamingConvoId = useStore((s) => s.streamingConvoId);
+  const streamingAgentId = useStore((s) => s.streamingAgentId);
   const streamText = useStore((s) => s.streamText);
   const models = useStore((s) => s.models);
   const providers = useStore((s) => s.providers);
@@ -61,6 +63,7 @@ export default function ChatView() {
   const [matchIdx, setMatchIdx] = useState(0);
   const [storyPicker, setStoryPicker] = useState(false);
   const [editingScenario, setEditingScenario] = useState<{ agentId: string; scenario: Scenario | null } | null>(null);
+  const [groupEditor, setGroupEditor] = useState<{ convoId: string | null } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
   const dragCounter = useRef(0);
@@ -82,9 +85,18 @@ export default function ChatView() {
   };
 
   const convo = convos.find((c) => c.id === activeConvoId);
-  const agent = agents.find((a) => a.id === convo?.agentId);
+  const isGroup = convo?.kind === "group";
+  const groupAgents = (convo?.participants ?? [])
+    .map((p) => agents.find((a) => a.id === p.agentId))
+    .filter((a): a is Agent => !!a);
+  const agent = isGroup ? null : agents.find((a) => a.id === convo?.agentId) ?? null;
   const chatRm = agent ? resolveModel("chat", models, providers, settings, agent.models) : null;
   const isStreamingHere = streamingConvoId === activeConvoId && !!activeConvoId;
+  const streamingAgent = streamingAgentId ? agents.find((a) => a.id === streamingAgentId) ?? null : null;
+  /** which agent owns a given assistant message (group chats) */
+  const agentForMessage = (m: ChatMessage): Agent | null =>
+    (m.agentId ? agents.find((a) => a.id === m.agentId) : undefined) ?? agent ?? groupAgents[0] ?? null;
+  const streamingBubbleAgent = streamingAgent ?? agent ?? groupAgents[0] ?? null;
 
   // auto scroll when near bottom
   useEffect(() => {
@@ -117,7 +129,7 @@ export default function ChatView() {
     filesToDataUrls(files).then((urls) => urls.length && addPendingImages(urls));
   };
 
-  if (!convo || !agent) {
+  if (!convo || (!agent && !isGroup)) {
     const noAgents = agents.length === 0;
     return (
       <div className="empty-chat">
@@ -144,11 +156,14 @@ export default function ChatView() {
 
   // story mode
   const storyScenario =
-    convo.mode === "story" && convo.scenarioId ? scenarios.find((s) => s.id === convo.scenarioId) ?? null : null;
-  const agentScenarios = scenarios.filter((s) => s.agentId === agent.id);
+    !isGroup && convo.mode === "story" && convo.scenarioId
+      ? scenarios.find((s) => s.id === convo.scenarioId) ?? null
+      : null;
+  const agentScenarios = agent ? scenarios.filter((s) => s.agentId === agent.id) : [];
 
   // greeting suggestions: conversation has only the greeting so far
   const showSuggests =
+    !!agent &&
     messages.length === 1 &&
     messages[0].role === "assistant" &&
     !isStreamingHere &&
@@ -160,17 +175,34 @@ export default function ChatView() {
         <button className="back" onClick={() => setSidebar(true)} title={t("convoList")}>
           <Icon name="back" />
         </button>
-        <Avatar agent={agent} size={38} radius={12} />
+        {isGroup ? (
+          <div className="group-ava" title={tf("groupMembers", { n: groupAgents.length })}>
+            {groupAgents.slice(0, 3).map((a) => (
+              <span
+                key={a.id}
+                style={{
+                  background: `linear-gradient(135deg, hsl(${a.hue} 70% 55%), hsl(${(a.hue + 40) % 360} 70% 45%))`,
+                }}
+              >
+                {a.emoji}
+              </span>
+            ))}
+          </div>
+        ) : (
+          agent && <Avatar agent={agent} size={38} radius={12} />
+        )}
         <div>
           <div className="title">
-            {agent.name}
+            {isGroup ? convo.title : agent!.name}
             {storyScenario && (
               <span className="story-badge" title={tf("storyBadgeTip", { name: storyScenario.name })}>
                 📖 {storyScenario.name}
               </span>
             )}
           </div>
-          {chatRm ? (
+          {isGroup ? (
+            <div className="sub">{tf("groupMembers", { n: groupAgents.length })}</div>
+          ) : chatRm && agent ? (
             <Menu
               align="start"
               trigger={
@@ -183,7 +215,7 @@ export default function ChatView() {
                 ...chatModels.slice(0, 12).map((m) => ({
                   label: `${m.label} · ${providerName(m.providerId)}`,
                   onClick: () =>
-                    updateAgent(agent.id, { models: { ...agent.models, chat: m.id } }),
+                    updateAgent(agent!.id, { models: { ...agent!.models, chat: m.id } }),
                 })),
                 ...(chatModels.length > 1
                   ? ([
@@ -205,28 +237,30 @@ export default function ChatView() {
           )}
         </div>
         <div className="spacer" />
-        <TipFor text={storyScenario ? t("storyModeOn") : t("storyModeTip")}>
-          <button
-            className={`icon-btn ${storyScenario ? "active" : ""}`}
-            onClick={() => {
-              if (storyScenario) {
-                useStore
-                  .getState()
-                  .askConfirm({
-                    title: t("exitStoryTitle"),
-                    message: t("exitStoryMsg"),
-                    confirmText: t("storyModeOn"),
-                    danger: false,
-                  })
-                  .then((ok) => { if (ok) exitStoryMode(convo.id); });
-              } else {
-                setStoryPicker(true);
-              }
-            }}
-          >
-            <Icon name="book" />
-          </button>
-        </TipFor>
+        {!isGroup && (
+          <TipFor text={storyScenario ? t("storyModeOn") : t("storyModeTip")}>
+            <button
+              className={`icon-btn ${storyScenario ? "active" : ""}`}
+              onClick={() => {
+                if (storyScenario) {
+                  useStore
+                    .getState()
+                    .askConfirm({
+                      title: t("exitStoryTitle"),
+                      message: t("exitStoryMsg"),
+                      confirmText: t("storyModeOn"),
+                      danger: false,
+                    })
+                    .then((ok) => { if (ok) exitStoryMode(convo.id); });
+                } else {
+                  setStoryPicker(true);
+                }
+              }}
+            >
+              <Icon name="book" />
+            </button>
+          </TipFor>
+        )}
         <TipFor text={t("searchTip")}>
           <button
             className={`icon-btn ${searchOpen ? "active" : ""}`}
@@ -238,8 +272,11 @@ export default function ChatView() {
             <Icon name="search" />
           </button>
         </TipFor>
-        <TipFor text={t("agentSettingsTip")}>
-          <button className="icon-btn" onClick={() => setEditing(agent.id)}>
+        <TipFor text={isGroup ? t("groupEdit") : t("agentSettingsTip")}>
+          <button
+            className="icon-btn"
+            onClick={() => (isGroup ? setGroupEditor({ convoId: convo.id }) : setEditing(agent!.id))}
+          >
             <Icon name="edit" />
           </button>
         </TipFor>
@@ -355,8 +392,9 @@ export default function ChatView() {
                 >
                   <MessageBubble
                     msg={m}
-                    agent={agent}
+                    agent={agentForMessage(m) ?? agent!}
                     isLast={i === messages.length - 1}
+                    showName={isGroup && m.role === "assistant"}
                     selectable={multiSelectActive}
                     selected={multiSelectIds.includes(m.id)}
                     onToggleSelect={() => toggleMultiSelect(m.id)}
@@ -365,7 +403,7 @@ export default function ChatView() {
               </Fragment>
             );
           })}
-          {isStreamingHere && (
+          {isStreamingHere && streamingBubbleAgent && (
             <MessageBubble
               msg={
                 {
@@ -376,14 +414,15 @@ export default function ChatView() {
                   createdAt: Date.now(),
                 } as ChatMessage
               }
-              agent={agent}
+              agent={streamingBubbleAgent}
               isLast
               streaming={streamText}
+              showName={isGroup}
             />
           )}
           {showSuggests && (
             <div className="suggests" style={{ marginLeft: 47 }}>
-              {agent.suggestions.map((s, i) => (
+              {agent!.suggestions.map((s, i) => (
                 <button key={i} className="suggest-chip" onClick={() => send(s)}>
                   {s}
                 </button>
@@ -470,7 +509,7 @@ export default function ChatView() {
                 title={t("editScenario")}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setEditingScenario({ agentId: agent.id, scenario: s });
+                  setEditingScenario({ agentId: agent!.id, scenario: s });
                 }}
               >
                 <Icon name="edit" size={17} />
@@ -480,7 +519,7 @@ export default function ChatView() {
           <button
             className="btn"
             style={{ width: "100%", marginTop: 8 }}
-            onClick={() => setEditingScenario({ agentId: agent.id, scenario: null })}
+            onClick={() => setEditingScenario({ agentId: agent!.id, scenario: null })}
           >
             <Icon name="plus" size={15} /> {t("newScenario")}
           </button>
@@ -490,6 +529,8 @@ export default function ChatView() {
       {editingScenario && (
         <ScenarioEditor agentId={editingScenario.agentId} scenario={editingScenario.scenario} onClose={() => setEditingScenario(null)} />
       )}
+
+      {groupEditor && <GroupEditor convoId={groupEditor.convoId} onClose={() => setGroupEditor(null)} />}
     </>
   );
 }

@@ -16,6 +16,7 @@ export default function MessageBubble({
   selectable,
   selected,
   onToggleSelect,
+  showName,
 }: {
   msg: ChatMessage;
   agent: Agent;
@@ -24,6 +25,8 @@ export default function MessageBubble({
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  /** group chat: label the bubble with the speaking agent's name */
+  showName?: boolean;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -105,6 +108,7 @@ export default function MessageBubble({
         </div>
       )}
       <div className="body">
+        {!isUser && showName && <div className="msg-name">{agent.name}</div>}
         {selectable && (
           <div className={`checkbox ${selected ? "on" : ""}`} style={{ marginBottom: 4 }}>
             {selected && "✓"}

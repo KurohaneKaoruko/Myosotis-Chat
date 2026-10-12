@@ -133,6 +133,10 @@ export interface Conversation {
   messageCount?: number;
   /** role of the newest message, for the list preview */
   lastMessageRole?: "user" | "assistant";
+  /** "direct" (a single agent) or "group" (multi-agent round table); default "direct" */
+  kind?: "direct" | "group";
+  /** group-chat participants in speaking order (only when kind === "group") */
+  participants?: GroupParticipant[];
   summary: string; // rolling summary of older messages
   summarizedUntil: number; // messages older than this are covered by summary
   /** "story" when the conversation runs on a scenario; default "chat" */
@@ -154,8 +158,25 @@ export interface ChatMessage {
   replyTo?: { role: "user" | "assistant"; content: string }; // quoted message
   /** "narrative" messages are story-mode narration (opening story), rendered without actions */
   kind?: "narrative";
+  /** group chat: which agent produced this assistant message */
+  agentId?: string;
+  /** group chat: participant agent ids that can see this message (empty/undefined = everyone) */
+  visibleTo?: string[];
   createdAt: number;
   status?: "ok" | "error" | "aborted";
+}
+
+/** How a group participant reacts to messages: every message, or only @mentions. */
+export type ParticipantMode = "all" | "mention";
+
+/** One member of a multi-agent group chat. */
+export interface GroupParticipant {
+  agentId: string;
+  /** which messages this agent receives as context */
+  receiveMode: ParticipantMode;
+  /** when this agent produces a reply */
+  replyMode: ParticipantMode;
+  sortOrder: number;
 }
 
 export type MemoryKind = "fact" | "preference" | "event" | "relationship" | "goal";

@@ -21,6 +21,13 @@ export interface StoryContext {
   newlyTriggered: ScenarioEvent[];
 }
 
+/** Group-chat injection payload handed to the context builder. */
+export interface GroupContext {
+  title: string;
+  /** display names of the other participants */
+  others: string[];
+}
+
 // ================================================================
 // The memory engine.
 //
@@ -54,12 +61,22 @@ export function buildSystemPrompt(
   convo: Conversation,
   settings: Settings,
   memories: MemoryItem[],
-  story?: StoryContext
+  story?: StoryContext,
+  group?: GroupContext
 ): string {
   const parts: string[] = [];
   parts.push(BASE_RULES);
   parts.push(agent.persona.trim() || NEUTRAL_PERSONA);
   if (agent.speechRules?.trim()) parts.push(`## 说话风格\n${agent.speechRules.trim()}`);
+
+  if (group) {
+    parts.push(
+      `## 群聊场景\n你正在多人群聊「${group.title}」中，参与者有：${group.others.join("、")}。\n` +
+        "- 历史里其他参与者的发言会以「名字：内容」标注，你自己的发言不带前缀。\n" +
+        "- 只以你自己的身份说话，不要替其他参与者发言，也不要编造他们说过的话。\n" +
+        "- 像群聊一样简短自然，不要长篇大论；想点名某人时用 @名字。"
+    );
+  }
 
   const profileBits: string[] = [];
   if (settings.userName.trim()) profileBits.push(`用户的称呼：${settings.userName.trim()}`);
@@ -133,7 +150,9 @@ function memoryScore(m: MemoryItem, sim: number): number {
 export async function retrieveMemories(
   agentId: string,
   query: string,
-  embeddingRm: { model: ModelConfig; provider: Provider } | null
+  embeddingRm: { model: ModelConfig; provider: Provider } | null,
+  /** pre-computed query embedding (group turns embed once, reuse for every agent) */
+  queryVec?: number[] | null
 ): Promise<MemoryItem[]> {
   const all = await db.memories.toArray();
   if (!all.length) return [];
@@ -146,11 +165,13 @@ export async function retrieveMemories(
 
   let scored: { m: MemoryItem; s: number }[];
   if (embeddingRm && query.trim()) {
-    let qvec: number[] | null = null;
-    try {
-      qvec = await embedText(embeddingRm, query.slice(0, 500));
-    } catch {
-      qvec = null;
+    let qvec: number[] | null = queryVec ?? null;
+    if (!qvec) {
+      try {
+        qvec = await embedText(embeddingRm, query.slice(0, 500));
+      } catch {
+        qvec = null;
+      }
     }
     const sim = (m: MemoryItem) =>
       m.embedding?.length && qvec?.length ? cosine(qvec, m.embedding) : textSimilarity(query, m.content);

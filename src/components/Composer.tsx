@@ -7,6 +7,7 @@ import { sttTranscribe } from "../lib/api";
 import { db } from "../lib/db";
 import { resolveModel } from "../lib/utils";
 import { t } from "../i18n";
+import type { Agent } from "../types";
 
 const MAX_IMG_SIDE = 1024;
 
@@ -73,13 +74,58 @@ export default function Composer() {
   const triggerNextStoryEvent = useStore((s) => s.triggerNextStoryEvent);
   const streamingNow = useStore((s) => s.streamingConvoId) !== null;
   const [voiceChat, setVoiceChat] = useState(false);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
 
   const activeConvo = convos.find((c) => c.id === activeConvoId);
   const activeAgent = agents.find((a) => a.id === activeConvo?.agentId);
+  const isGroup = activeConvo?.kind === "group";
+  const groupAgents: Agent[] = isGroup
+    ? (activeConvo?.participants ?? [])
+        .map((p) => agents.find((a) => a.id === p.agentId))
+        .filter((a): a is Agent => !!a)
+    : [];
   const storyScenario =
     activeConvo?.mode === "story" && activeConvo.scenarioId
       ? scenarios.find((s) => s.id === activeConvo.scenarioId) ?? null
       : null;
+
+  // ---------------- @mention autocomplete (group chats only) ----------------
+  /** The "@token" currently being typed, if any (based on the caret position). */
+  const mentionToken = (() => {
+    if (!isGroup) return null;
+    const ta = taRef.current;
+    const caret = ta?.selectionStart ?? text.length;
+    const before = text.slice(0, caret);
+    const at = before.lastIndexOf("@");
+    if (at < 0) return null;
+    const frag = before.slice(at + 1);
+    if (/[\s\n]/.test(frag)) return null;
+    return { query: frag, start: at, caret };
+  })();
+  const mentionMatches =
+    mentionToken && !mentionDismissed
+      ? groupAgents
+          .filter((a) => a.name.toLowerCase().includes(mentionToken.query.toLowerCase()))
+          .slice(0, 6)
+      : [];
+
+  const applyMention = (a: Agent) => {
+    if (!mentionToken) return;
+    const before = text.slice(0, mentionToken.start);
+    const after = text.slice(mentionToken.caret);
+    const inserted = `@${a.name} `;
+    setText(`${before}${inserted}${after}`);
+    setMentionDismissed(false);
+    setMentionIdx(0);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      const pos = before.length + inserted.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    });
+  };
 
   const prompts = useLiveQuery(() => db.prompts.toArray(), []) ?? [];
   const slashQuery = text.startsWith("/") && !text.includes("\n") ? text.slice(1).toLowerCase() : null;
@@ -120,6 +166,29 @@ export default function Composer() {
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // @mention picker takes over the arrow keys / enter / tab while open
+    if (mentionMatches.length) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIdx((i) => (i + 1) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIdx((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        applyMention(mentionMatches[Math.min(mentionIdx, mentionMatches.length - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && settings.sendOnEnter && !e.nativeEvent.isComposing) {
       e.preventDefault();
       doSend();
@@ -377,6 +446,31 @@ export default function Composer() {
               ))}
             </div>
           )}
+          {mentionMatches.length > 0 && (
+            <div className="prompt-pop mention-pop">
+              {mentionMatches.map((a, i) => (
+                <button
+                  key={a.id}
+                  className={`prompt-item mention-item ${i === mentionIdx ? "on" : ""}`}
+                  onMouseEnter={() => setMentionIdx(i)}
+                  onClick={() => applyMention(a)}
+                >
+                  <span
+                    className="mi-ava"
+                    style={{
+                      background: `linear-gradient(135deg, hsl(${a.hue} 70% 55%), hsl(${(a.hue + 40) % 360} 70% 45%))`,
+                    }}
+                  >
+                    {a.emoji}
+                  </span>
+                  <b>@{a.name}</b>
+                </button>
+              ))}
+            </div>
+          )}
+          {isGroup && !text && groupAgents.length > 0 && (
+            <div className="group-mention-hint">{t("groupMentionHint")}</div>
+          )}
           {images.length > 0 && (
             <div className="img-previews">
               {images.map((img, i) => (
@@ -394,7 +488,11 @@ export default function Composer() {
             rows={1}
             placeholder={listening ? t("listening") : t("inputPh")}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setMentionDismissed(false);
+              setMentionIdx(0);
+            }}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             disabled={!activeConvoId}
