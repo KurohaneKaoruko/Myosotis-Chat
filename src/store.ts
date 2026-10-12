@@ -25,7 +25,10 @@ export type View = "chat" | "memory" | "settings";
 
 function sortConvos(list: Conversation[]): Conversation[] {
   return [...list].sort(
-    (a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || b.updatedAt - a.updatedAt
+    (a, b) =>
+      Number(!!a.archived) - Number(!!b.archived) ||
+      Number(b.pinned ?? false) - Number(a.pinned ?? false) ||
+      b.updatedAt - a.updatedAt
   );
 }
 
@@ -95,6 +98,9 @@ interface AppState {
   openConversation: (id: string) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   pinConversation: (id: string, pinned: boolean) => Promise<void>;
+  archiveConversation: (id: string, archived: boolean) => Promise<void>;
+  duplicateConversation: (id: string) => Promise<void>;
+  setConversationTags: (id: string, tags: string[]) => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
   clearConversation: (id: string) => Promise<void>;
   exportConversation: (id: string) => Promise<void>;
@@ -280,7 +286,11 @@ export const useStore = create<AppState>()(
         if (convoId) {
           const last = await db.messages.where("conversationId").equals(convoId).reverse().sortBy("createdAt");
           const lastMsg = last[0];
-          const patch = { lastMessage: lastMsg ? (lastMsg.content || "…").slice(0, 40) : "" };
+          const patch = {
+            lastMessage: lastMsg ? (lastMsg.content || "…").slice(0, 40) : "",
+            messageCount: await db.messages.where("conversationId").equals(convoId).count(),
+            lastMessageRole: lastMsg?.role,
+          };
           await db.conversations.update(convoId, patch);
           set((s) => ({ convos: s.convos.map((c) => (c.id === convoId ? { ...c, ...patch } : c)) }));
         }
@@ -428,6 +438,8 @@ export const useStore = create<AppState>()(
           agentId,
           title: t("newChat"),
           lastMessage: agent.greeting.trim() ? plainPreview(agent.greeting) : "",
+          messageCount: agent.greeting.trim() ? 1 : 0,
+          lastMessageRole: agent.greeting.trim() ? "assistant" : undefined,
           summary: "",
           summarizedUntil: 0,
           createdAt: now(),
@@ -476,6 +488,40 @@ export const useStore = create<AppState>()(
         await db.conversations.update(id, { pinned });
         set({ convos: sortConvos(get().convos.map((c) => (c.id === id ? { ...c, pinned } : c))) });
       },
+      async archiveConversation(id, archived) {
+        // archiving a pinned conversation also unpins it (ported behaviour)
+        const patch: Partial<Conversation> = archived ? { archived: true, pinned: false } : { archived: false };
+        await db.conversations.update(id, patch);
+        set({ convos: sortConvos(get().convos.map((c) => (c.id === id ? { ...c, ...patch } : c))) });
+        get().showToast(t(archived ? "archivedToast" : "unarchivedToast"), "success");
+      },
+      async duplicateConversation(id) {
+        const src = get().convos.find((c) => c.id === id);
+        if (!src) return;
+        const msgs = await db.messages.where("conversationId").equals(id).sortBy("createdAt");
+        const copy: Conversation = {
+          ...src,
+          id: uid("cnv"),
+          title: `${src.title} ${t("copySuffix")}`,
+          pinned: false,
+          archived: false,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        await db.conversations.add(copy);
+        if (msgs.length) {
+          await db.messages.bulkAdd(
+            msgs.map((m) => ({ ...m, id: uid("msg"), conversationId: copy.id }))
+          );
+        }
+        set({ convos: sortConvos([copy, ...get().convos]) });
+        get().showToast(t("convoDuplicated"), "success");
+      },
+      async setConversationTags(id, tags) {
+        const clean = Array.from(new Set(tags.map((x) => x.trim()).filter(Boolean))).slice(0, 6);
+        await db.conversations.update(id, { tags: clean });
+        set({ convos: get().convos.map((c) => (c.id === id ? { ...c, tags: clean } : c)) });
+      },
       async renameConversation(id, title) {
         const t = title.trim().slice(0, 24);
         if (!t) return;
@@ -488,12 +534,16 @@ export const useStore = create<AppState>()(
           summary: "",
           summarizedUntil: 0,
           lastMessage: "",
+          messageCount: 0,
+          lastMessageRole: undefined,
           title: t("newChat"),
         });
         const agent = get().agents.find((a) => a.id === get().convos.find((c) => c.id === id)?.agentId);
         set({
           convos: get().convos.map((c) =>
-            c.id === id ? { ...c, summary: "", summarizedUntil: 0, lastMessage: "", title: t("newChat") } : c
+            c.id === id
+              ? { ...c, summary: "", summarizedUntil: 0, lastMessage: "", messageCount: 0, lastMessageRole: undefined, title: t("newChat") }
+              : c
           ),
           messages: [],
         });
@@ -508,7 +558,13 @@ export const useStore = create<AppState>()(
             status: "ok" as const,
           };
           await db.messages.add(greeting);
-          set({ messages: [greeting] });
+          await db.conversations.update(id, { messageCount: 1, lastMessageRole: "assistant" });
+          set((s) => ({
+            messages: [greeting],
+            convos: s.convos.map((c) =>
+              c.id === id ? { ...c, messageCount: 1, lastMessageRole: "assistant" as const } : c
+            ),
+          }));
         }
       },
       async exportConversation(id) {
@@ -685,6 +741,8 @@ export const useStore = create<AppState>()(
         const patch: Partial<Conversation> = {
           updatedAt: now(),
           lastMessage: plainPreview(full).slice(0, 40) || "…",
+          messageCount: await db.messages.where("conversationId").equals(convo.id).count(),
+          lastMessageRole: "assistant",
         };
         if (isFirstReal && trimmed) patch.title = plainPreview(trimmed).slice(0, 16) || t("newChat");
         await db.conversations.update(convo.id, patch);
@@ -751,7 +809,11 @@ export const useStore = create<AppState>()(
         // refresh preview in list
         const last = await db.messages.where("conversationId").equals(msg.conversationId).reverse().sortBy("createdAt");
         const lastMsg = last[0];
-        const patch = { lastMessage: lastMsg ? (lastMsg.content || "…").slice(0, 40) : "" };
+        const patch = {
+          lastMessage: lastMsg ? (lastMsg.content || "…").slice(0, 40) : "",
+          messageCount: await db.messages.where("conversationId").equals(msg.conversationId).count(),
+          lastMessageRole: lastMsg?.role,
+        };
         await db.conversations.update(msg.conversationId, patch);
         set((s) => ({ convos: s.convos.map((c) => (c.id === msg.conversationId ? { ...c, ...patch } : c)) }));
       },

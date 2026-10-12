@@ -241,6 +241,15 @@ button {
   flex: 1;
   margin: 0;
 }
+.filter-row {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 6px;
+}
+.filter-row .chip {
+  font-size: 11px;
+  padding: 3px 10px;
+}
 .new-btn {
   width: 38px;
   height: 38px;
@@ -415,6 +424,22 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 1px;
+}
+.convo-item .convo-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+  overflow: hidden;
+}
+.convo-item .convo-tag {
+  font-size: 10px;
+  line-height: 1.6;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .convo-item .del {
   display: none;

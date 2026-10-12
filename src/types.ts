@@ -125,6 +125,14 @@ export interface Conversation {
   title: string;
   lastMessage: string;
   pinned?: boolean;
+  /** archived conversations are hidden from the default list filter */
+  archived?: boolean;
+  /** free-form labels used for filtering */
+  tags?: string[];
+  /** cached message count shown in the conversation list */
+  messageCount?: number;
+  /** role of the newest message, for the list preview */
+  lastMessageRole?: "user" | "assistant";
   summary: string; // rolling summary of older messages
   summarizedUntil: number; // messages older than this are covered by summary
   /** "story" when the conversation runs on a scenario; default "chat" */
