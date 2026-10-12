@@ -37,6 +37,7 @@ export default function ChatView() {
   const setSidebar = useStore((s) => s.setSidebar);
   const setEditing = useStore((s) => s.setEditingAgentId);
   const send = useStore((s) => s.send);
+  const undoLastTurn = useStore((s) => s.undoLastTurn);
   const clearConversation = useStore((s) => s.clearConversation);
   const exportConversation = useStore((s) => s.exportConversation);
   const updateAgent = useStore((s) => s.updateAgent);
@@ -251,6 +252,11 @@ export default function ChatView() {
           items={[
             { label: t("exportMd"), icon: "download", onClick: () => exportConversation(convo.id) },
             { label: t("viewSummary"), icon: "book", onClick: () => setShowSummary(true) },
+            {
+              label: t("undoLastTurn"),
+              icon: "refresh",
+              onClick: () => undoLastTurn(),
+            },
             { label: t("multiSelect"), icon: "check", onClick: () => enterMultiSelect() },
             {
               label: t("clearChat"),

@@ -65,6 +65,9 @@ const en: Partial<Dict> = {
   batchDeleteTitle: "Batch delete",
   batchDeleteMsg: "Delete {n} selected messages?\nThe agent's long-term memory is not affected.",
   multiSelect: "Select messages",
+  undoLastTurn: "Undo last turn",
+  undoDone: "Undid {n} messages",
+  nothingToUndo: "Nothing to undo",
 
   inputPh: "Type a message — paste or drop images…",
   sendImg: "Send image (needs a vision model)",

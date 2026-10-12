@@ -67,6 +67,9 @@ const zhCN = {
   batchDeleteTitle: "批量删除",
   batchDeleteMsg: "删除选中的 {n} 条消息？\n智能体的长期记忆不受影响。",
   multiSelect: "多选消息",
+  undoLastTurn: "撤销上一轮",
+  undoDone: "已撤销 {n} 条消息",
+  nothingToUndo: "没有可撤销的对话",
 
   // composer
   inputPh: "输入消息，可粘贴/拖入图片…",

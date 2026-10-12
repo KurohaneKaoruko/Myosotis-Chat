@@ -109,6 +109,7 @@ interface AppState {
   send: (text: string, images?: string[], replyTo?: { role: "user" | "assistant"; content: string }) => Promise<void>;
   stop: () => void;
   regenerate: () => Promise<void>;
+  undoLastTurn: () => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
   editAndResend: (messageId: string, newText: string) => Promise<void>;
 
@@ -801,8 +802,49 @@ export const useStore = create<AppState>()(
         }
       },
 
-      async deleteMessage(id) {
-        const msg = await db.messages.get(id);
+      /**
+       * Undo the last exchange (ported from the old project's undo_last_chat_turn):
+       * drop the newest assistant message together with the user message it
+       * answered; when there is no assistant message, drop the trailing user
+       * message instead.
+       */
+      async undoLastTurn() {
+        const { messages, activeConvoId } = get();
+        if (!activeConvoId || get().streamingConvoId || !messages.length) return;
+
+        const lastAssistantIdx = messages.map((m) => m.role).lastIndexOf("assistant");
+        let doomed: ChatMessage[] = [];
+        if (lastAssistantIdx >= 0) {
+          const userIdx = lastAssistantIdx > 0 && messages[lastAssistantIdx - 1].role === "user" ? lastAssistantIdx - 1 : -1;
+          if (userIdx < 0) {
+            // only the greeting is left — nothing to undo
+            get().showToast(t("nothingToUndo"));
+            return;
+          }
+          doomed = messages.slice(userIdx);
+        } else {
+          const lastUserId = messages.map((m) => m.role).lastIndexOf("user");
+          if (lastUserId < 0) return;
+          doomed = messages.slice(lastUserId);
+        }
+        if (!doomed.length) return;
+
+        const ids = doomed.map((m) => m.id);
+        await db.messages.bulkDelete(ids);
+        const kept = messages.filter((m) => !ids.includes(m.id));
+        set({ messages: kept });
+        const last = kept[kept.length - 1];
+        const patch = {
+          lastMessage: last ? (last.content || "…").slice(0, 40) : "",
+          messageCount: kept.length,
+          lastMessageRole: last?.role,
+        };
+        await db.conversations.update(activeConvoId, patch);
+        set((s) => ({ convos: s.convos.map((c) => (c.id === activeConvoId ? { ...c, ...patch } : c)) }));
+        get().showToast(tf("undoDone", { n: ids.length }), "success");
+      },
+
+      async deleteMessage(id) {        const msg = await db.messages.get(id);
         if (!msg) return;
         await db.messages.delete(id);
         set((s) => ({ messages: s.messages.filter((m) => m.id !== id) }));
