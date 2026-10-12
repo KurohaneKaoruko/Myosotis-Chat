@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Modal, Icon, SelectBox, Toggle } from "./ui";
-import { AGENT_PRESETS, type Agent, type Scenario } from "../types";
+import { AGENT_PRESETS, clampSlotParam, type Agent, type AgentSlotParams, type Scenario, type SlotId, type SlotParamKey } from "../types";
 import { t, tf } from "../i18n";
+import type { Dict } from "../i18n/zh-CN";
 import ScenarioEditor from "./ScenarioEditor";
 
 const EMOJIS = [
@@ -10,6 +11,62 @@ const EMOJIS = [
   "🧚","🧝","🧙","🧛","👼","👧","👦","🧑‍🏫","🧑‍🎨","🧑‍💻","👨‍🍳","👩‍⚕️","🤖","👽","🐲","🦄",
   "⭐","🌙","☀️","🌈","🎵","📚","☕","🍵","🎮","🎨","✨","🔮","💎","🍀","🌊","🔥",
 ];
+
+const SLOT_ROWS: { slot: SlotId; labelKey: keyof Dict }[] = [
+  { slot: "reply", labelKey: "slotReply" },
+  { slot: "vision", labelKey: "slotVision" },
+  { slot: "asr", labelKey: "slotAsr" },
+  { slot: "tts", labelKey: "slotTts" },
+];
+
+const PARAM_ROWS: { key: SlotParamKey; labelKey: keyof Dict; step: number; ph: string }[] = [
+  { key: "temperature", labelKey: "slotTemperature", step: 0.1, ph: "0~2" },
+  { key: "maxTokens", labelKey: "slotMaxTokens", step: 1, ph: ">0" },
+  { key: "topP", labelKey: "slotTopP", step: 0.05, ph: "0~1" },
+  { key: "frequencyPenalty", labelKey: "slotFreqPenalty", step: 0.1, ph: "-2~2" },
+];
+
+/** Per-slot generation parameter matrix (empty = follow the global default). */
+function SlotParamsSection({
+  value,
+  onChange,
+}: {
+  value: AgentSlotParams;
+  onChange: (v: AgentSlotParams) => void;
+}) {
+  const setParam = (slot: SlotId, key: SlotParamKey, raw: string) => {
+    const trimmed = raw.trim();
+    const num = trimmed === "" ? null : Number(trimmed);
+    const clamped = clampSlotParam(key, num === null || Number.isNaN(num) ? null : num);
+    onChange({ ...value, [slot]: { ...(value[slot] ?? {}), [key]: clamped } });
+  };
+  return (
+    <div className="slot-params">
+      <div className="slot-head">
+        <span />
+        {PARAM_ROWS.map((p) => (
+          <span key={p.key}>{t(p.labelKey)}</span>
+        ))}
+      </div>
+      {SLOT_ROWS.map(({ slot, labelKey }) => (
+        <div key={slot} className="slot-row">
+          <span className="slot-label">{t(labelKey)}</span>
+          {PARAM_ROWS.map(({ key, step, ph }) => (
+            <input
+              key={key}
+              className="input slot-input"
+              type="number"
+              step={step}
+              placeholder={ph}
+              value={value[slot]?.[key] ?? ""}
+              onChange={(e) => setParam(slot, key, e.target.value)}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function AgentEditor() {
   const editingAgentId = useStore((s) => s.editingAgentId);
@@ -300,6 +357,11 @@ function EditorBody({ agentId }: { agentId: string }) {
           {modelSelect(t("embedModel"), "embedding", embedModels)}
         </>
       )}
+
+      <div className="section-label" style={{ padding: "4px 0" }}>{t("slotParamsSection")}</div>
+      <div className="desc" style={{ marginBottom: 8 }}>{t("slotParamsHint")}</div>
+      <SlotParamsSection value={form.slotParams ?? {}} onChange={(v) => set({ slotParams: v })} />
+      <div className="desc">{t("slotAsrTtsNote")}</div>
       </Modal>
       {editingScenario && (
         <ScenarioEditor

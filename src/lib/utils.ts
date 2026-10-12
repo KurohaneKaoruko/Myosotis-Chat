@@ -1,4 +1,13 @@
-import type { ModelRole, ModelConfig, Provider, ResolvedModel, Settings } from "../types";
+import type {
+  Agent,
+  ModelRole,
+  ModelConfig,
+  Provider,
+  ResolvedModel,
+  Settings,
+  SlotId,
+  SlotParams,
+} from "../types";
 import { getLanguage, t } from "../i18n";
 
 export function uid(prefix = ""): string {
@@ -79,8 +88,36 @@ export function resolveModel(
   return null;
 }
 
-/** Human friendly error text from a failed API call. */
-export function friendlyError(e: unknown): string {
+export interface EffectiveGenParams {
+  temperature: number;
+  maxTokens: number;
+  topP?: number;
+  frequencyPenalty?: number;
+}
+
+/**
+ * Merge generation parameters for one model slot.
+ * Priority (low → high): global settings.genParams → agent.slotParams[slot].
+ * A `null`/`undefined` override falls through to the global value.
+ */
+export function resolveGenParams(
+  slot: SlotId,
+  settings: Settings,
+  agent?: Pick<Agent, "slotParams"> | null
+): EffectiveGenParams {
+  const gen = settings.genParams ?? { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
+  const override: SlotParams | undefined = agent?.slotParams?.[slot];
+  const pick = (v: number | null | undefined, fallback: number) =>
+    v === null || v === undefined ? fallback : v;
+  return {
+    temperature: pick(override?.temperature, gen.temperature),
+    maxTokens: pick(override?.maxTokens, gen.maxTokens),
+    topP: override?.topP ?? undefined,
+    frequencyPenalty: override?.frequencyPenalty ?? undefined,
+  };
+}
+
+/** Human friendly error text from a failed API call. */export function friendlyError(e: unknown): string {
   if (e == null) return t("errUnknown");
   const msg = String((e as any)?.message ?? e);
   if (/Failed to fetch|NetworkError|network/i.test(msg)) return t("errNetwork");

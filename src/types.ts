@@ -65,6 +65,41 @@ export interface Settings {
   onboardingDone: boolean;
 }
 
+/** Per-slot generation parameter overrides. `undefined`/`null` = follow the global default. */
+export interface SlotParams {
+  temperature?: number | null;
+  maxTokens?: number | null;
+  topP?: number | null;
+  frequencyPenalty?: number | null;
+}
+
+/** Which model slots an agent may tune independently. */
+export interface AgentSlotParams {
+  reply?: SlotParams;
+  vision?: SlotParams;
+  asr?: SlotParams;
+  tts?: SlotParams;
+}
+
+export type SlotId = keyof AgentSlotParams;
+
+/** Accepted ranges for every slot-level parameter (ported validation rules). */
+export const SLOT_PARAM_RANGES = {
+  temperature: { min: 0, max: 2 },
+  maxTokens: { min: 1, max: 1_000_000 },
+  topP: { min: 0, max: 1 },
+  frequencyPenalty: { min: -2, max: 2 },
+} as const;
+
+export type SlotParamKey = keyof typeof SLOT_PARAM_RANGES;
+
+/** Clamp an override into its valid range; returns null for empty/invalid input. */
+export function clampSlotParam(key: SlotParamKey, v: number | null | undefined): number | null {
+  if (v === null || v === undefined || Number.isNaN(v)) return null;
+  const { min, max } = SLOT_PARAM_RANGES[key];
+  return Math.min(max, Math.max(min, v));
+}
+
 /** A persona-driven chat companion. */
 export interface Agent {
   id: string;
@@ -78,6 +113,8 @@ export interface Agent {
   suggestions: string[]; // starter suggestions
   memoryEnabled: boolean;
   models: Partial<Record<"chat" | "vision" | "embedding", string>>; // override global defaults
+  /** slot-level generation parameter overrides (reply/vision/asr/tts) */
+  slotParams?: AgentSlotParams;
   createdAt: number;
   updatedAt: number;
 }

@@ -6,7 +6,7 @@ import { db, exportAll, importAll } from "./lib/db";
 import { mergeAgentConversations } from "./lib/migrate";
 import { chatComplete } from "./lib/api";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle } from "./lib/memory";
-import { uid, now, resolveModel, friendlyError, plainPreview } from "./lib/utils";
+import { uid, now, resolveModel, resolveGenParams, friendlyError, plainPreview } from "./lib/utils";
 import {
   DEFAULT_SETTINGS,
   type Agent,
@@ -639,12 +639,15 @@ export const useStore = create<AppState>()(
 
         let full = "";
         let finalStatus: ChatMessage["status"] = "ok";
-        const gen = settings.genParams ?? { temperature: 0.8, maxTokens: 4096, contextTurns: 12 };
+        // slot-level params: vision slot when images are present, reply otherwise
+        const gen = resolveGenParams(hasImages ? "vision" : "reply", settings, agent);
         try {
           full = await chatComplete(rm, context, {
             signal: controller.signal,
             temperature: gen.temperature,
             maxTokens: gen.maxTokens,
+            topP: gen.topP,
+            frequencyPenalty: gen.frequencyPenalty,
             keySeed: `${agent.id}:${trimmed}`,
             onDelta: (d) => set((s) => ({ streamText: s.streamText + d })),
           });

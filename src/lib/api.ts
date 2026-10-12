@@ -18,6 +18,8 @@ export interface ChatOptions {
   signal?: AbortSignal;
   temperature?: number;
   maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
   /** seed for key-pool rotation; same seed always picks the same key */
   keySeed?: string;
 }
@@ -153,6 +155,7 @@ function buildAnthropicBody(messages: ApiMessage[], model: string, opts: ChatOpt
   };
   if (system) body.system = system;
   if (opts.temperature != null) body.temperature = opts.temperature;
+  if (opts.topP != null) body.top_p = opts.topP;
   return body;
 }
 
@@ -181,6 +184,7 @@ function buildGeminiBody(messages: ApiMessage[], opts: ChatOptions) {
     temperature: opts.temperature ?? 0.8,
     maxOutputTokens: opts.maxTokens ?? 8192,
   };
+  if (opts.topP != null) body.generationConfig.topP = opts.topP;
   return body;
 }
 
@@ -199,6 +203,8 @@ export async function chatComplete(rm: ResolvedModel, messages: ApiMessage[], op
     body = { model: model.name, messages: buildOpenAIMessages(messages), stream };
     if (opts.temperature != null) body.temperature = opts.temperature;
     if (opts.maxTokens) body.max_tokens = opts.maxTokens;
+    if (opts.topP != null) body.top_p = opts.topP;
+    if (opts.frequencyPenalty != null) body.frequency_penalty = opts.frequencyPenalty;
     if (stream) body.stream_options = { include_usage: false };
   } else if (p.protocol === "anthropic") {
     url = `${base}/v1/messages`;
@@ -323,12 +329,19 @@ export async function ttsSynthesize(rm: ResolvedModel, text: string): Promise<Bl
   return await res.blob();
 }
 
-export async function sttTranscribe(rm: ResolvedModel, audio: Blob, filename = "audio.webm"): Promise<string> {
+export async function sttTranscribe(
+  rm: ResolvedModel,
+  audio: Blob,
+  filename = "audio.webm",
+  opts: { temperature?: number } = {}
+): Promise<string> {
   const base = trimUrl(rm.provider.baseUrl);
   const key = pickProviderKey(rm.provider, rm.model.name);
   const fd = new FormData();
   fd.append("model", rm.model.name);
   fd.append("file", audio, filename);
+  // whisper-style endpoints accept a sampling temperature (0–1); others ignore it
+  if (opts.temperature != null) fd.append("temperature", String(opts.temperature));
   const res = await fetch(`${base}/audio/transcriptions`, {
     method: "POST",
     headers: key ? { Authorization: `Bearer ${key}` } : undefined,

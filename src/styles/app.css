@@ -1803,6 +1803,39 @@ textarea.input {
   text-overflow: ellipsis;
 }
 
+/* per-slot generation parameter matrix (agent editor) */
+.slot-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.slot-head,
+.slot-row {
+  display: grid;
+  grid-template-columns: 62px repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+.slot-head span {
+  font-size: 10px;
+  color: var(--text-3);
+  text-align: center;
+  white-space: nowrap;
+}
+.slot-label {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.slot-input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 6px;
+  font-size: 12px;
+  text-align: center;
+}
+
 /* model list in settings */
 .model-row {
   display: flex;

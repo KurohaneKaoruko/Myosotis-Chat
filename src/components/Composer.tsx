@@ -68,12 +68,14 @@ export default function Composer() {
   const showToast = useStore((s) => s.showToast);
   const messages = useStore((s) => s.messages);
   const convos = useStore((s) => s.convos);
+  const agents = useStore((s) => s.agents);
   const scenarios = useStore((s) => s.scenarios);
   const triggerNextStoryEvent = useStore((s) => s.triggerNextStoryEvent);
   const streamingNow = useStore((s) => s.streamingConvoId) !== null;
   const [voiceChat, setVoiceChat] = useState(false);
 
   const activeConvo = convos.find((c) => c.id === activeConvoId);
+  const activeAgent = agents.find((a) => a.id === activeConvo?.agentId);
   const storyScenario =
     activeConvo?.mode === "story" && activeConvo.scenarioId
       ? scenarios.find((s) => s.id === activeConvo.scenarioId) ?? null
@@ -231,7 +233,9 @@ export default function Composer() {
         const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
         showToast(t("transcribing"));
         try {
-          const t = await sttTranscribe(rm, blob);
+          const t = await sttTranscribe(rm, blob, "audio.webm", {
+            temperature: activeAgent?.slotParams?.asr?.temperature ?? undefined,
+          });
           if (t) {
             if (voiceChatRef.current) {
               stopListening();
