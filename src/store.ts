@@ -377,6 +377,7 @@ export const useStore = create<AppState>()(
           emoji: "✨",
           hue: Math.floor(Math.random() * 360),
           persona: "",
+          speechRules: "",
           greeting: "",
           suggestions: [],
           memoryEnabled: true,

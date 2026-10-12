@@ -70,6 +70,8 @@ export interface Agent {
   emoji: string;
   hue: number; // avatar hue
   persona: string; // system prompt: who it is
+  /** how it talks — tone, habits, taboos (appended after the persona) */
+  speechRules?: string;
   greeting: string; // first message of a new conversation
   suggestions: string[]; // starter suggestions
   memoryEnabled: boolean;

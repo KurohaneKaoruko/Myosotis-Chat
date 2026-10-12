@@ -204,6 +204,18 @@ function EditorBody({ agentId }: { agentId: string }) {
       </div>
 
       <div className="field">
+        <label>{t("speechRules")}</label>
+        <textarea
+          className="input"
+          rows={3}
+          value={form.speechRules ?? ""}
+          onChange={(e) => set({ speechRules: e.target.value })}
+          placeholder={t("speechRulesPh")}
+        />
+        <div className="desc">{t("speechRulesDesc")}</div>
+      </div>
+
+      <div className="field">
         <label>{t("greeting")}</label>
         <textarea
           className="input"
