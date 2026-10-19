@@ -32,6 +32,8 @@ import { bus } from "./events.ts";
 export interface TurnCallbacks {
   /** the user's message was persisted — echo it back immediately */
   onUser?: (m: ChatMessage) => void;
+  /** convert inline data URLs into stored URLs before persisting */
+  persistImage?: (dataUrl: string) => Promise<string>;
   onDelta?: (text: string) => void;
   onMessage?: (m: ChatMessage) => void;
   onStatus?: (s: string) => void;
@@ -73,13 +75,24 @@ export async function runSingleTurn(
   const trimmed = userText.trim();
   if (!trimmed && !images?.length) return { userMsg: null, assistantMsg: null };
 
-  // 1. persist user message
+  // 1. persist user message (inline images become stored URLs)
+  let storedImages = images;
+  if (images?.length && cb.persistImage) {
+    storedImages = [];
+    for (const img of images) {
+      try {
+        storedImages.push(await cb.persistImage(img));
+      } catch {
+        storedImages.push(img);
+      }
+    }
+  }
   const userMsg: ChatMessage = {
     id: uid("msg"),
     conversationId: e.convo.id,
     role: "user",
     content: trimmed,
-    images: images?.length ? images : undefined,
+    images: storedImages?.length ? storedImages : undefined,
     replyTo: replyTo as any,
     createdAt: now(),
     status: "ok",
@@ -108,7 +121,16 @@ export async function runSingleTurn(
   }
 
   // 4. build context (memory retrieval happens inside buildContextMessages)
-  const context = await buildContextMessages(e.agent, convo, listMessages(db, userId, convo.id), e.settings, e.models, e.providers);
+  // the vision model gets the original data URLs (not the stored paths)
+  const modelImages = images?.length ? images : undefined;
+  const context = await buildContextMessages(
+    e.agent,
+    convo,
+    listMessages(db, userId, convo.id).map((m) => (m.id === userMsg.id && modelImages ? { ...m, images: modelImages } : m)),
+    e.settings,
+    e.models,
+    e.providers
+  );
   const assistantMsg: ChatMessage = {
     id: uid("msg"),
     conversationId: convo.id,

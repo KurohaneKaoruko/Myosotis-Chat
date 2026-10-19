@@ -563,6 +563,7 @@ const en: Partial<Dict> = {
   grpPinned: "Pinned",
   sending: "Sending",
   resendFailed: "Failed to send, tap to retry",
+  uploading: "Uploading image…",
 };
 
 export default en;

@@ -6,6 +6,7 @@ import { speakBrowser, playTtsBlob, stopAudio } from "../lib/speech";
 import { ttsSynthesize } from "@myosotis/core";
 import { Icon } from "./ui";
 import { t } from "../i18n";
+import { resolveImageUrl } from "../lib/uploads";
 import Markdown from "./Markdown";
 
 // ================================================================
@@ -243,7 +244,13 @@ export default function MessageBubble({
         {!!msg.images?.length && (
           <div className="images">
             {msg.images.map((img, i) => (
-              <img key={i} src={img} alt="" onClick={() => setLightbox(img)} />
+              <img
+                key={i}
+                src={resolveImageUrl(img)}
+                alt=""
+                loading="lazy"
+                onClick={() => setLightbox(resolveImageUrl(img))}
+              />
             ))}
           </div>
         )}

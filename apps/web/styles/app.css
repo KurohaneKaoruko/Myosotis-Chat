@@ -1022,6 +1022,12 @@ button {
   border-top-color: var(--accent);
   animation: spin 0.7s linear infinite;
 }
+.status-spinner.light {
+  width: 15px;
+  height: 15px;
+  border-color: var(--border-strong);
+  border-top-color: var(--text-2);
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

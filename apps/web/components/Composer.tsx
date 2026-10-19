@@ -74,6 +74,7 @@ export default function Composer() {
   const scenarios = useStore((s) => s.scenarios);
   const triggerNextStoryEvent = useStore((s) => s.triggerNextStoryEvent);
   const streamingNow = useStore((s) => s.streamingConvoId) !== null;
+  const uploading = useStore((s) => s.uploadingImages);
   const [voiceChat, setVoiceChat] = useState(false);
   const [mentionIdx, setMentionIdx] = useState(0);
   const [mentionDismissed, setMentionDismissed] = useState(false);
@@ -531,9 +532,9 @@ export default function Composer() {
         >
           <Icon name="mic" />
         </button>
-        {busy ? (
-          <button className="send stop" title={t("stopGen")} onClick={stop}>
-            <Icon name="stop" />
+        {busy || uploading ? (
+          <button className="send stop" title={uploading ? t("uploading") : t("stopGen")} onClick={stop} disabled={uploading}>
+            {uploading ? <span className="status-spinner light" /> : <Icon name="stop" />}
           </button>
         ) : (
           <button

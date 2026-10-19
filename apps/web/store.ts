@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { setLanguage, t, tf, dateLocale } from "./i18n";
 import { db, exportAll, importAll, getDbMode, remoteDB, apiBase } from "./lib/db";
 import { connectLive, disconnectLive, clearUnread } from "./lib/live";
+import { uploadImages } from "./lib/uploads";
 import { mergeAgentConversations } from "./lib/migrate";
 import { chatComplete, embedText } from "@myosotis/core";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle, retrieveMemories } from "@myosotis/core";
@@ -58,11 +59,17 @@ async function sendRemoteTurn(
   set((s: any) => ({ messages: [...s.messages, optimistic], replyTo: null }));
 
   try {
+    // hub mode: upload images first so the message only carries URLs
+    let payloadImages = images;
+    if (images?.length) {
+      set({ uploadingImages: true });
+      payloadImages = await uploadImages(images);
+    }
     const res = await fetch(apiBase() + "/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ conversationId: convo.id, text: trimmed, images, replyTo }),
+      body: JSON.stringify({ conversationId: convo.id, text: trimmed, images: payloadImages, replyTo }),
     });
     if (res.status === 401) {
       window.dispatchEvent(new CustomEvent("myo:unauthorized"));
@@ -147,7 +154,7 @@ async function sendRemoteTurn(
     }));
     toast.error(friendlyError(e));
   } finally {
-    set({ streamingConvoId: null, streamingAgentId: null, streamText: "" });
+    set({ streamingConvoId: null, streamingAgentId: null, streamText: "", uploadingImages: false });
     // refresh conversation meta (title may have been generated server-side)
     try {
       const data = await remoteDB.bootstrap();
@@ -193,6 +200,8 @@ interface AppState {
   /** group chat: which participant is currently composing a reply */
   streamingAgentId: string | null;
   streamText: string;
+  /** true while images are being uploaded to the hub */
+  uploadingImages: boolean;
   memoryAgentFilter: string | null;
   confirmOptions: { title: string; message: string; confirmText?: string; danger?: boolean } | null;
   replyTo: { role: "user" | "assistant"; content: string } | null;
@@ -317,6 +326,7 @@ export const useStore = create<AppState>()(
       streamingConvoId: null,
       streamingAgentId: null,
       streamText: "",
+      uploadingImages: false,
       memoryAgentFilter: null,
       confirmOptions: null,
       replyTo: null,

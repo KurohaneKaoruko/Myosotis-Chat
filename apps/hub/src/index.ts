@@ -26,6 +26,7 @@ import { runSingleTurn, runGroupTurn, listMessages } from "./chat-service.ts";
 import { createOnebotAdapter } from "./adapter-onebot.ts";
 import { ChannelManager } from "./channels.ts";
 import { bus } from "./events.ts";
+import { UploadStore, MAX_UPLOAD_BYTES } from "./uploads.ts";
 import { AGENT_TOOLS, AgentBridge, probeTools, type AgentToolSpec } from "./agent-bridge.ts";
 import {
   DEFAULT_SETTINGS,
@@ -51,6 +52,7 @@ const TRUST_PROXY = process.env.TRUST_PROXY === "1";
 
 mkdirSync(DATA_DIR, { recursive: true });
 const db = new HubDB(path.join(DATA_DIR, "hub.db"));
+const uploads = new UploadStore(DATA_DIR);
 
 // server-side i18n port: log-friendly keys, no UI strings needed here
 setI18n({ t: (k) => k });
@@ -578,6 +580,14 @@ app.post("/api/chat", async (req: any, res: any) => {
             onDelta: (d) => send("delta", { delta: d }),
             onMessage: (m) => send("message", m),
             onStatus: (s) => send("status", s),
+            // inline images (e.g. from a chat platform) become stored URLs
+            persistImage: async (dataUrl: string) => {
+              const saved = uploads.save(dataUrl);
+              if (!saved) return dataUrl;
+              const proto = req.protocol ?? "http";
+              const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost";
+              return `${proto}://${host}${saved.url}`;
+            },
           },
           ac.signal
         );
@@ -684,6 +694,34 @@ app.put("/api/channels/onebot/config", async (req: any, res: any) => {
   if (body.listenPort != null) patch.listenPort = Number(body.listenPort);
   if (typeof body.streaming === "boolean") patch.streaming = body.streaming;
   return { ok: true, onebot: await channels.update(patch) };
+});
+
+// ----------------------------------------------------------------
+// image uploads (content-addressed files on disk)
+// ----------------------------------------------------------------
+app.post("/api/upload", async (req: any, res: any) => {
+  const { data } = req.body ?? {};
+  if (typeof data !== "string" || !data.startsWith("data:")) {
+    return res.status(400).send({ error: "bad-upload" });
+  }
+  // cheap guard before decoding: base64 inflates by 4/3
+  if (data.length > MAX_UPLOAD_BYTES * 1.4) {
+    return res.status(413).send({ error: "too-large" });
+  }
+  const saved = uploads.save(data);
+  if (!saved) return res.status(400).send({ error: "unsupported-image" });
+  // absolute URL so other devices / the desktop shell can load it too
+  const proto = req.protocol ?? "http";
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost";
+  return { url: `${proto}://${host}${saved.url}`, path: saved.url, bytes: saved.bytes, mime: saved.mime };
+});
+
+app.get("/uploads/:name", async (req: any, res: any) => {
+  const file = uploads.read(req.params.name);
+  if (!file) return res.status(404).send({ error: "not-found" });
+  res.type(file.mime);
+  res.header("Cache-Control", "public, max-age=31536000, immutable");
+  return res.send(file.data);
 });
 
 // ----------------------------------------------------------------
