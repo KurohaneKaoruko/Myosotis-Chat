@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Agent, ChatMessage } from "@myosotis/core";
 import { useStore } from "../store";
 import { resolveModel, formatTime } from "@myosotis/core";
@@ -7,6 +7,19 @@ import { ttsSynthesize } from "@myosotis/core";
 import { Icon } from "./ui";
 import { t } from "../i18n";
 import Markdown from "./Markdown";
+
+// ================================================================
+// One chat message.
+//
+// Chat-app feel requirements handled here:
+//  * long-press (touch) / right-click opens the action sheet — hover
+//    doesn't exist on phones
+//  * streaming bubble renders a live "typing" caret
+//  * compact timestamp inside the action sheet, quiet by default
+// ================================================================
+
+/** minimum press duration (ms) before we treat a touch as long-press */
+const LONG_PRESS_MS = 420;
 
 export default function MessageBubble({
   msg,
@@ -17,6 +30,8 @@ export default function MessageBubble({
   selected,
   onToggleSelect,
   showName,
+  /** consecutive message from the same sender: hide the avatar row */
+  grouped,
 }: {
   msg: ChatMessage;
   agent: Agent;
@@ -27,11 +42,14 @@ export default function MessageBubble({
   onToggleSelect?: () => void;
   /** group chat: label the bubble with the speaking agent's name */
   showName?: boolean;
+  /** chat-app style grouping: consecutive same-sender message */
+  grouped?: boolean;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
   const settings = useStore((s) => s.settings);
   const models = useStore((s) => s.models);
   const providers = useStore((s) => s.providers);
@@ -42,6 +60,37 @@ export default function MessageBubble({
   const showToast = useStore((s) => s.showToast);
   const isUser = msg.role === "user";
   const text = streaming ?? msg.content;
+
+  const pressTimer = useRef<number | null>(null);
+  const pressMoved = useRef(false);
+
+  // close the action sheet on outside tap
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest?.(".msg-sheet, .bubble")) setSheetOpen(false);
+    };
+    // capture phase: run before the tap does anything else
+    document.addEventListener("pointerdown", close, true);
+    return () => document.removeEventListener("pointerdown", close, true);
+  }, [sheetOpen]);
+
+  const armLongPress = () => {
+    if (selectable || editing) return;
+    pressMoved.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      if (!pressMoved.current) {
+        setSheetOpen(true);
+        if (navigator.vibrate) navigator.vibrate(12);
+      }
+    }, LONG_PRESS_MS);
+  };
+  const disarmLongPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
 
   // story-mode narration (opening story): italic, no actions, never selectable chrome
   if (msg.kind === "narrative" && streaming === undefined) {
@@ -90,23 +139,99 @@ export default function MessageBubble({
     }
   };
 
+  // ---- action list, shared between hover strip and touch sheet ----
+  const actions: Array<{ key: string; label: string; icon: any; danger?: boolean; run: () => void }> = [
+    { key: "copy", label: t("copy"), icon: "copy", run: copy },
+  ];
+  if (!isUser) {
+    actions.push({ key: "speak", label: speaking ? t("stopSpeak") : t("speak"), icon: "speaker", run: speak });
+    actions.push({
+      key: "regen",
+      label: isLast ? (msg.status === "error" ? t("retry") : t("rewrite")) : t("rewrite"),
+      icon: "refresh",
+      run: () => regenerate(),
+    });
+  }
+  actions.push({
+    key: "quote",
+    label: t("quote"),
+    icon: "chat",
+    run: () => setReplyTo({ role: msg.role, content: msg.content }),
+  });
+  if (isUser) {
+    actions.push({
+      key: "edit",
+      label: t("editMsg"),
+      icon: "edit",
+      run: () => {
+        setEditText(msg.content);
+        setEditing(true);
+      },
+    });
+  }
+  actions.push({
+    key: "delete",
+    label: t("deleteMsg"),
+    icon: "trash",
+    danger: true,
+    run: () => {
+      useStore
+        .getState()
+        .askConfirm({ title: t("deleteMsgTitle"), message: t("deleteMsgBody"), confirmText: t("commonDelete"), danger: true })
+        .then((ok) => {
+          if (ok) deleteMessage(msg.id);
+        });
+    },
+  });
+
+  const doAction = (a: (typeof actions)[number]) => {
+    setSheetOpen(false);
+    a.run();
+  };
+
+  const streamingNow = streaming !== undefined;
+
   return (
     <div
-      className={`msg ${isUser ? "user" : "ai"} ${msg.status === "error" ? "error" : ""} ${selectable ? "selectable" : ""} ${selected ? "selected" : ""}`}
+      className={[
+        "msg",
+        isUser ? "user" : "ai",
+        msg.status === "error" ? "error" : "",
+        selectable ? "selectable" : "",
+        selected ? "selected" : "",
+        grouped ? "grouped" : "",
+        sheetOpen ? "sheet-open" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onClick={selectable ? onToggleSelect : undefined}
+      onTouchStart={armLongPress}
+      onTouchMove={() => {
+        pressMoved.current = true;
+        disarmLongPress();
+      }}
+      onTouchEnd={disarmLongPress}
+      onContextMenu={(e) => {
+        // desktop right-click = the same sheet (nice symmetry, native feel)
+        if (!selectable && !editing) {
+          e.preventDefault();
+          setSheetOpen(true);
+        }
+      }}
     >
-      {isUser ? (
-        <div className="ava user-ava">{settings.userName?.trim()?.slice(0, 1) || t("me")}</div>
-      ) : (
-        <div
-          className="ava"
-          style={{
-            background: `linear-gradient(135deg, hsl(${agent.hue} 70% 55%), hsl(${(agent.hue + 40) % 360} 70% 45%))`,
-          }}
-        >
-          {agent.emoji}
-        </div>
-      )}
+      {!(grouped && !showName) &&
+        (isUser ? (
+          <div className="ava user-ava">{settings.userName?.trim()?.slice(0, 1) || t("me")}</div>
+        ) : (
+          <div
+            className="ava"
+            style={{
+              background: `linear-gradient(135deg, hsl(${agent.hue} 70% 55%), hsl(${(agent.hue + 40) % 360} 70% 45%))`,
+            }}
+          >
+            {agent.emoji}
+          </div>
+        ))}
       <div className="body">
         {!isUser && showName && <div className="msg-name">{agent.name}</div>}
         {selectable && (
@@ -150,78 +275,71 @@ export default function MessageBubble({
                   {t("commonCancel")}
                 </button>
                 <button className="btn sm primary" onClick={() => editAndResend(msg.id, editText)}>
-                  {t("saveResend")}
+                  {t("editResend")}
                 </button>
               </div>
             </div>
-          ) : streaming !== undefined && !text.trim() ? (
-            <span className="typing">
-              <i />
-              <i />
-              <i />
-            </span>
-          ) : !isUser && streaming === undefined ? (
-            <Markdown text={text} />
-          ) : (
+          ) : isUser || streamingNow ? (
             <>
-              {text}
-              {streaming !== undefined && <span className="cursor" />}
+              <span className="msg-text">{text}</span>
+              {streamingNow && <span className="type-caret" aria-hidden />}
             </>
+          ) : (
+            <Markdown text={msg.content} />
           )}
         </div>
+
+        {/* desktop hover strip (pointer devices only — touch uses the sheet) */}
         {streaming === undefined && !editing && (
           <div className="acts" style={isUser ? { justifyContent: "flex-end" } : undefined}>
             <span className="time">{formatTime(msg.createdAt)}</span>
-            <button onClick={copy} title={t("copy")}>
-              <Icon name="copy" size={12} /> {t("copy")}
-            </button>
-            {!isUser && (
-              <button onClick={speak} title={speaking ? t("stopSpeak") : t("speak")}>
-                <Icon name="speaker" size={12} /> {speaking ? t("stopSpeak") : t("speak")}
-              </button>
-            )}
-            {!isUser && isLast && msg.status === "error" && (
-              <button onClick={() => regenerate()} title={t("retry")}>
-                <Icon name="refresh" size={12} /> {t("retry")}
-              </button>
-            )}
-            {!isUser && isLast && msg.status !== "error" && (
-              <button onClick={() => regenerate()} title={t("rewrite")}>
-                <Icon name="refresh" size={12} /> {t("rewrite")}
-              </button>
-            )}
-            <button
-              title={t("quote")}
-              onClick={() => setReplyTo({ role: msg.role, content: msg.content })}
-            >
-              <Icon name="chat" size={12} /> {t("quote")}
-            </button>
-            {isUser && (
-              <button
-                title={t("editResend")}
-                onClick={() => {
-                  setEditText(msg.content);
-                  setEditing(true);
-                }}
-              >
-                <Icon name="edit" size={12} /> {t("editMsg")}
-              </button>
-            )}
+            {actions
+              .filter((a) => a.key !== "delete")
+              .map((a) => (
+                <button key={a.key} onClick={a.run} title={a.label}>
+                  <Icon name={a.icon} size={12} /> {a.label}
+                </button>
+              ))}
             <button
               title={t("deleteMsg")}
-              onClick={() => {
-                useStore
-                  .getState()
-                  .askConfirm({ title: t("deleteMsgTitle"), message: t("deleteMsgBody"), confirmText: t("commonDelete"), danger: true })
-                  .then((ok) => { if (ok) deleteMessage(msg.id); });
-              }}
+              onClick={actions.find((a) => a.key === "delete")!.run}
             >
               <Icon name="trash" size={12} /> {t("deleteMsg")}
             </button>
           </div>
         )}
+
+        {/* quiet timestamp for grouped/compact view */}
+        {streaming === undefined && grouped && !editing && (
+          <div className={`time-float ${isUser ? "right" : ""}`}>{formatTime(msg.createdAt)}</div>
+        )}
       </div>
-      {lightbox && <div className="lightbox" onClick={() => setLightbox(null)}><img src={lightbox} alt="" /></div>}
+
+      {/* touch / right-click action sheet */}
+      {sheetOpen && (
+        <div className="msg-sheet">
+          <div className="sheet-time">
+            {new Date(msg.createdAt).toLocaleString(undefined, {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </div>
+          {actions.map((a) => (
+            <button key={a.key} className={a.danger ? "danger" : ""} onClick={() => doAction(a)}>
+              <Icon name={a.icon} size={15} />
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {lightbox && (
+        <div className="lightbox" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" />
+        </div>
+      )}
     </div>
   );
 }

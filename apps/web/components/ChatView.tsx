@@ -98,11 +98,16 @@ export default function ChatView() {
     (m.agentId ? agents.find((a) => a.id === m.agentId) : undefined) ?? agent ?? groupAgents[0] ?? null;
   const streamingBubbleAgent = streamingAgent ?? agent ?? groupAgents[0] ?? null;
 
-  // auto scroll when near bottom
+  // auto scroll when near bottom (chat-app stickiness)
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages.length, streamText, activeConvoId]);
+    if (!el) return;
+    if (stickBottom.current) {
+      // during streaming the content grows every frame — use direct jump (smooth fights the streamer)
+      if (isStreamingHere) el.scrollTop = el.scrollHeight;
+      else el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [messages.length, streamText, activeConvoId, isStreamingHere]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -383,6 +388,13 @@ export default function ChatView() {
           {messages.map((m, i) => {
             const prev = messages[i - 1];
             const showDate = !prev || !isSameDay(prev.createdAt, m.createdAt);
+            // chat-app grouping: same sender within 3 min collapses the avatar
+            const grouped =
+              !showDate &&
+              !!prev &&
+              prev.role === m.role &&
+              (isGroup ? prev.agentId === m.agentId : true) &&
+              m.createdAt - prev.createdAt < 3 * 60_000;
             return (
               <Fragment key={m.id}>
                 {showDate && <div className="date-chip">{dateLabel(m.createdAt)}</div>}
@@ -394,7 +406,8 @@ export default function ChatView() {
                     msg={m}
                     agent={agentForMessage(m) ?? agent!}
                     isLast={i === messages.length - 1}
-                    showName={isGroup && m.role === "assistant"}
+                    showName={isGroup && m.role === "assistant" && !grouped}
+                    grouped={grouped}
                     selectable={multiSelectActive}
                     selected={multiSelectIds.includes(m.id)}
                     onToggleSelect={() => toggleMultiSelect(m.id)}
@@ -416,9 +429,16 @@ export default function ChatView() {
               }
               agent={streamingBubbleAgent}
               isLast
-              streaming={streamText}
+              streaming={streamText || undefined}
               showName={isGroup}
             />
+          )}
+          {isStreamingHere && !streamText && (
+            <div className="typing-row">
+              <span className="typing-dots" aria-hidden>
+                <i /><i /><i />
+              </span>
+            </div>
           )}
           {showSuggests && (
             <div className="suggests" style={{ marginLeft: 47 }}>

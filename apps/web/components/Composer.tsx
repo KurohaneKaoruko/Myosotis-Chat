@@ -514,11 +514,16 @@ export default function Composer() {
           <Icon name="mic" />
         </button>
         {busy ? (
-          <button className="send" title={t("stopGen")} onClick={stop}>
+          <button className="send stop" title={t("stopGen")} onClick={stop}>
             <Icon name="stop" />
           </button>
         ) : (
-          <button className="send" title={t("send")} onClick={doSend} disabled={(!text.trim() && !images.length) || !activeConvoId}>
+          <button
+            className={`send ${text.trim() || images.length ? "ready" : ""}`}
+            title={t("send")}
+            onClick={doSend}
+            disabled={(!text.trim() && !images.length) || !activeConvoId}
+          >
             <Icon name="send" />
           </button>
         )}

@@ -3,7 +3,7 @@ import { useStore } from "../store";
 import { Avatar, Icon, Menu, PromptModal, TipFor } from "./ui";
 import GroupEditor from "./GroupEditor";
 import { t, tf } from "../i18n";
-import { formatTime } from "@myosotis/core";
+import { formatTime, plainPreview } from "@myosotis/core";
 import type { Agent, Conversation } from "@myosotis/core";
 
 type Filter = "all" | "pinned" | "archived";
@@ -38,6 +38,7 @@ function GroupAvatar({ agents }: { agents: Agent[] }) {
  * chat is labelled by its agent, a group chat by its title and members.
  */
 export default function Sidebar() {
+  const settings = useStore((s) => s.settings);
   const agents = useStore((s) => s.agents);
   const convos = useStore((s) => s.convos);
   const view = useStore((s) => s.view);
@@ -202,13 +203,18 @@ export default function Sidebar() {
               <div className="meta">
                 <div className="t">
                   <span className="name">
-                    {convo.pinned && <span className="pin-mark">📌</span>}
+                    {convo.pinned && <Icon name="pin" size={11} />}
                     {convo.archived && <span className="pin-mark">🗄️</span>}
                     {label}
                   </span>
                   <span className="time">{formatTime(convo.updatedAt)}</span>
                 </div>
-                <div className="preview">{convo.lastMessage || "…"}</div>
+                <div className="preview">
+                  <span className={`preview-text ${convo.lastMessageRole === "user" ? "mine" : ""}`}>
+                    {convo.lastMessageRole === "user" ? `${settings.userName || t("me")}：` : ""}
+                    {plainPreview(convo.lastMessage) || "…"}
+                  </span>
+                </div>
                 {(convo.tags?.length ?? 0) > 0 && (
                   <div className="convo-tags">
                     {convo.tags!.map((tg) => (

@@ -99,6 +99,10 @@ async function sendRemoteTurn(
           messages: [...s.messages.filter((m: ChatMessage) => m.id !== optimistic.id), finished],
           streamText: "",
         }));
+        // subtle "reply arrived" haptic (ignored where unsupported)
+        try {
+          navigator.vibrate?.(15);
+        } catch {}
       } else if (event === "error") {
         toast.error(String(data?.message ?? "hub error"));
       }
