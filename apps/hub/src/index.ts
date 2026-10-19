@@ -464,6 +464,8 @@ function loadEntities(userId: string, agentId: string) {
 }
 
 const activeStreams = new Set<AbortController>();
+/** userId+conversationId → controller, so "stop" can cancel the right turn */
+const streamByConvo = new Map<string, AbortController>();
 
 const bridges = new Map<string, AgentBridge>();
 
@@ -493,10 +495,13 @@ app.post("/api/chat", async (req: any, res: any) => {
   };
 
   const ac = new AbortController();
+  const streamKey = `${userId}:${req.body?.conversationId ?? ""}`;
   activeStreams.add(ac);
+  streamByConvo.set(streamKey, ac);
   req.raw.on("close", () => {
     streamClosed = true;
     activeStreams.delete(ac);
+    if (streamByConvo.get(streamKey) === ac) streamByConvo.delete(streamKey);
     ac.abort();
   });
 
@@ -541,13 +546,21 @@ app.post("/api/chat", async (req: any, res: any) => {
       const settings = deepMergeSettings(DEFAULT_SETTINGS, db.getJson<Settings>("settings", userId) ?? {});
       const models = db.listJson<ModelConfig>("models", userId);
       const providers = db.listJson<Provider>("providers", userId);
-      send("user", { content: text });
-      await runGroupTurn(db, userId, { convo, settings, models, providers, agents }, text, images, {
-        onDelta: () => {},
-        onAgentDelta: (agentId, delta) => send("delta", { agentId, delta }),
-        onMessage: (m) => send("message", m),
-        onStatus: (s) => send("status", s),
-      });
+      await runGroupTurn(
+        db,
+        userId,
+        { convo, settings, models, providers, agents },
+        text,
+        images,
+        {
+          onUser: (m) => send("user", m),
+          onDelta: () => {},
+          onAgentDelta: (agentId, delta) => send("delta", { agentId, delta }),
+          onMessage: (m) => send("message", m),
+          onStatus: (s) => send("status", s),
+        },
+        ac.signal
+      );
     } else {
       const e = loadEntities(userId, convo.agentId);
       if (!e) {
@@ -561,12 +574,13 @@ app.post("/api/chat", async (req: any, res: any) => {
           images,
           replyTo,
           {
+            onUser: (m) => send("user", m),
             onDelta: (d) => send("delta", { delta: d }),
             onMessage: (m) => send("message", m),
             onStatus: (s) => send("status", s),
-          }
+          },
+          ac.signal
         );
-        send("user", result.userMsg);
         if (result.error) send("error", { message: result.error });
       }
     }
@@ -578,11 +592,19 @@ app.post("/api/chat", async (req: any, res: any) => {
       try { res.raw.end(); } catch {}
     }
     activeStreams.delete(ac);
+    if (streamByConvo.get(streamKey) === ac) streamByConvo.delete(streamKey);
   }
 });
-app.post("/api/chat/stop", async (req: any) => {
-  // abort handled by client disconnect; kept for future server-side abort
-  return { ok: true };
+app.post("/api/chat/stop", async (req: any, res: any) => {
+  const { conversationId } = req.body ?? {};
+  const key = `${req.userId}:${conversationId ?? ""}`;
+  const ac = streamByConvo.get(key);
+  if (ac) {
+    ac.abort();
+    streamByConvo.delete(key);
+    return { ok: true, stopped: true };
+  }
+  return { ok: true, stopped: false };
 });
 
 // ----------------------------------------------------------------

@@ -56,6 +56,7 @@ export default function MessageBubble({
   const regenerate = useStore((s) => s.regenerate);
   const deleteMessage = useStore((s) => s.deleteMessage);
   const editAndResend = useStore((s) => s.editAndResend);
+  const retryMessage = useStore((s) => s.retryMessage);
   const setReplyTo = useStore((s) => s.setReplyTo);
   const showToast = useStore((s) => s.showToast);
   const isUser = msg.role === "user";
@@ -246,7 +247,7 @@ export default function MessageBubble({
             ))}
           </div>
         )}
-        <div className={`bubble ${!isUser && !streaming ? "md" : ""}`}>
+        <div className={`bubble ${!isUser && !streaming ? "md" : ""} ${isUser && msg.status === "sending" ? "sending" : ""} ${isUser && msg.status === "error" ? "failed" : ""}`}>
           {msg.replyTo && !editing && (
             <div className="reply-quote">
               <Icon name="chat" size={12} />
@@ -288,6 +289,20 @@ export default function MessageBubble({
             <Markdown text={msg.content} />
           )}
         </div>
+
+        {/* delivery status: sending spinner / failed retry */}
+        {isUser && (msg.status === "sending" || msg.status === "error") && (
+          <div className={`msg-status ${msg.status}`}>
+            {msg.status === "sending" ? (
+              <span className="status-spinner" aria-label={t("sending")} />
+            ) : (
+              <button className="status-retry" onClick={() => retryMessage(msg.id)} title={t("resendFailed")}>
+                <Icon name="refresh" size={13} />
+                <span>{t("resendFailed")}</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* desktop hover strip (pointer devices only — touch uses the sheet) */}
         {streaming === undefined && !editing && (

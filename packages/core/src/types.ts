@@ -167,7 +167,8 @@ export interface ChatMessage {
   /** group chat: participant agent ids that can see this message (empty/undefined = everyone) */
   visibleTo?: string[];
   createdAt: number;
-  status?: "ok" | "error" | "aborted";
+  /** "sending" = in flight, "error" = failed (retryable), "aborted" = stopped */
+  status?: "sending" | "ok" | "error" | "aborted";
 }
 
 /** How a group participant reacts to messages: every message, or only @mentions. */

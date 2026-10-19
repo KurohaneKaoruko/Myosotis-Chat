@@ -30,6 +30,8 @@ import type { HubDB } from "./db.ts";
 import { bus } from "./events.ts";
 
 export interface TurnCallbacks {
+  /** the user's message was persisted — echo it back immediately */
+  onUser?: (m: ChatMessage) => void;
   onDelta?: (text: string) => void;
   onMessage?: (m: ChatMessage) => void;
   onStatus?: (s: string) => void;
@@ -64,7 +66,9 @@ export async function runSingleTurn(
   userText: string,
   images: string[] | undefined,
   replyTo: { id: string; role: string; content: string } | undefined,
-  cb: TurnCallbacks
+  cb: TurnCallbacks,
+  /** abort signal — lets the client actually cancel the upstream call */
+  signal?: AbortSignal
 ): Promise<{ userMsg: ChatMessage | null; assistantMsg: ChatMessage | null; error?: string }> {
   const trimmed = userText.trim();
   if (!trimmed && !images?.length) return { userMsg: null, assistantMsg: null };
@@ -82,6 +86,7 @@ export async function runSingleTurn(
   };
   db.putJson("messages", userMsg.id, userId, userMsg, { conversation_id: e.convo.id, created_at: userMsg.createdAt });
   const convo0 = touchConvo(db, userId, e.convo, trimmed);
+  cb.onUser?.(userMsg);
   bus.emit(userId, { type: "message", conversationId: e.convo.id, message: userMsg });
   bus.emit(userId, { type: "conversation", conversation: convo0 });
 
@@ -115,6 +120,7 @@ export async function runSingleTurn(
   };
   try {
     await chatComplete(rm, context, {
+      signal,
       temperature: e.settings.genParams?.temperature,
       maxTokens: e.settings.genParams?.maxTokens,
       onDelta: (d) => {
@@ -123,9 +129,14 @@ export async function runSingleTurn(
       },
     });
     assistantMsg.status = "ok";
-  } catch (err) {
-    assistantMsg.content = assistantMsg.content || friendlyError(err);
-    assistantMsg.status = "error";
+  } catch (err: any) {
+    if (err?.name === "AbortError" || signal?.aborted) {
+      assistantMsg.status = "aborted";
+      assistantMsg.content = assistantMsg.content;
+    } else {
+      assistantMsg.content = assistantMsg.content || friendlyError(err);
+      assistantMsg.status = "error";
+    }
   }
   db.putJson("messages", assistantMsg.id, userId, assistantMsg, { conversation_id: convo.id, created_at: assistantMsg.createdAt });
   const convoAfter = touchConvo(db, userId, convo, assistantMsg.content);
@@ -165,7 +176,8 @@ export async function runGroupTurn(
   e: { convo: Conversation; settings: Settings; models: ModelConfig[]; providers: Provider[]; agents: Agent[] },
   userText: string,
   images: string[] | undefined,
-  cb: TurnCallbacks
+  cb: TurnCallbacks,
+  signal?: AbortSignal
 ): Promise<void> {
   const participants = e.convo.participants ?? [];
   const text = userText.trim();
@@ -182,6 +194,7 @@ export async function runGroupTurn(
   };
   db.putJson("messages", userMsg.id, userId, userMsg, { conversation_id: e.convo.id, created_at: userMsg.createdAt });
   touchConvo(db, userId, e.convo, text);
+  cb.onUser?.(userMsg);
   bus.emit(userId, { type: "message", conversationId: e.convo.id, message: userMsg });
 
   const replyOrder = replyingParticipants(participants, text, e.agents);
@@ -221,6 +234,7 @@ export async function runGroupTurn(
     };
     try {
       await chatComplete(rm, ctx, {
+        signal,
         temperature: e.settings.genParams?.temperature,
         maxTokens: e.settings.genParams?.maxTokens,
         onDelta: (d) => {
@@ -229,9 +243,13 @@ export async function runGroupTurn(
         },
       });
       assistantMsg.status = "ok";
-    } catch (err) {
-      assistantMsg.content = assistantMsg.content || friendlyError(err);
-      assistantMsg.status = "error";
+    } catch (err: any) {
+      if (err?.name === "AbortError" || signal?.aborted) {
+        assistantMsg.status = "aborted";
+      } else {
+        assistantMsg.content = assistantMsg.content || friendlyError(err);
+        assistantMsg.status = "error";
+      }
     }
     db.putJson("messages", assistantMsg.id, userId, assistantMsg, { conversation_id: e.convo.id, created_at: assistantMsg.createdAt });
     const after = touchConvo(db, userId, e.convo, assistantMsg.content);

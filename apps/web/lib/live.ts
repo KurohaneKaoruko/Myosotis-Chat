@@ -147,6 +147,16 @@ function applyEvent(data: { type: string; conversationId: string; message: ChatM
   // the message we sent ourselves is already in the list
   if (store.activeConvoId === data.conversationId) {
     if (store.messages.some((m) => m.id === msg.id)) return;
+    // our own optimistic bubble → swap in the canonical message
+    const optimistic = store.messages.find(
+      (m) => m.role === msg.role && m.content === msg.content && m.status === "sending"
+    );
+    if (optimistic) {
+      useStore.setState({
+        messages: store.messages.map((m) => (m.id === optimistic.id ? { ...msg, status: "ok" } : m)),
+      });
+      return;
+    }
     useStore.setState({ messages: [...store.messages, msg] });
     return;
   }

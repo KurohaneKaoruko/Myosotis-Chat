@@ -561,6 +561,8 @@ const en: Partial<Dict> = {
   grpYesterday: "Yesterday",
   grpEarlier: "Earlier",
   grpPinned: "Pinned",
+  sending: "Sending",
+  resendFailed: "Failed to send, tap to retry",
 };
 
 export default en;

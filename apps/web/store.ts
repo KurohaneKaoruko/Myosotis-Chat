@@ -53,7 +53,7 @@ async function sendRemoteTurn(
     images: images?.length ? images : undefined,
     replyTo: replyTo as any,
     createdAt: now(),
-    status: "ok",
+    status: "sending",
   };
   set((s: any) => ({ messages: [...s.messages, optimistic], replyTo: null }));
 
@@ -92,6 +92,20 @@ async function sendRemoteTurn(
         } else {
           set((s: any) => ({ streamText: s.streamText + data.delta }));
         }
+      } else if (event === "user") {
+        // the server stored our message → replace the optimistic bubble
+        // with the canonical one (same id the server will keep)
+        const echoed = data as ChatMessage;
+        remoteDB.messages.cache.set(echoed.id, echoed);
+        set((s: any) => ({
+          messages: s.messages.map((m: ChatMessage) =>
+            m.id === optimistic.id
+              ? { ...echoed, status: "ok" }
+              : m.content === echoed.content && m.role === "user" && m.status === "sending"
+                ? { ...echoed, status: "ok" }
+                : m
+          ),
+        }));
       } else if (event === "message") {
         lastAssistant = data as ChatMessage;
         const finished: ChatMessage = data;
@@ -127,6 +141,10 @@ async function sendRemoteTurn(
       }
     }
   } catch (e: any) {
+    // failed to deliver — mark the bubble so it can be retried
+    set((s: any) => ({
+      messages: s.messages.map((m: ChatMessage) => (m.id === optimistic.id ? { ...m, status: "error" } : m)),
+    }));
     toast.error(friendlyError(e));
   } finally {
     set({ streamingConvoId: null, streamingAgentId: null, streamText: "" });
@@ -242,6 +260,8 @@ interface AppState {
   undoLastTurn: () => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
   editAndResend: (messageId: string, newText: string) => Promise<void>;
+  /** re-send a message that failed to deliver */
+  retryMessage: (id: string) => Promise<void>;
 
   // ----- memories -----
   addMemory: (m: Omit<MemoryItem, "id" | "createdAt" | "updatedAt" | "hitCount" | "pinned">) => Promise<void>;
@@ -1002,7 +1022,7 @@ export const useStore = create<AppState>()(
           images: images?.length ? images : undefined,
           replyTo: replyTo ?? undefined,
           createdAt: now(),
-          status: "ok",
+          status: "sending",
         };
         await db.messages.add(userMsg);
 
@@ -1128,6 +1148,15 @@ export const useStore = create<AppState>()(
         };
         await db.messages.add(aiMsg);
 
+        // the user's message reached the model → delivered
+        if (finalStatus !== "error") {
+          await db.messages.update(userMsg.id, { status: "ok" });
+          set((s) => ({ messages: s.messages.map((m) => (m.id === userMsg.id ? { ...m, status: "ok" } : m)) }));
+        } else {
+          await db.messages.update(userMsg.id, { status: "error" });
+          set((s) => ({ messages: s.messages.map((m) => (m.id === userMsg.id ? { ...m, status: "error" } : m)) }));
+        }
+
         const isFirstReal = currentConvo.title === t("newChat");
         const patch: Partial<Conversation> = {
           updatedAt: now(),
@@ -1175,6 +1204,18 @@ export const useStore = create<AppState>()(
 
       stop() {
         abortRef.current?.abort();
+        // hub mode: tell the server to cancel the upstream call too
+        if (getDbMode() === "remote") {
+          const convoId = get().activeConvoId;
+          if (convoId) {
+            fetch(apiBase() + "/api/chat/stop", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ conversationId: convoId }),
+            }).catch(() => {});
+          }
+        }
       },
 
       async regenerate() {
@@ -1248,6 +1289,17 @@ export const useStore = create<AppState>()(
         };
         await db.conversations.update(msg.conversationId, patch);
         set((s) => ({ convos: s.convos.map((c) => (c.id === msg.conversationId ? { ...c, ...patch } : c)) }));
+      },
+
+      async retryMessage(id) {
+        const { messages, activeConvoId } = get();
+        if (!activeConvoId || get().streamingConvoId) return;
+        const msg = messages.find((m) => m.id === id);
+        if (!msg || msg.role !== "user" || msg.status !== "error") return;
+        // drop the failed bubble, then send the very same text again
+        await db.messages.delete(id);
+        set({ messages: get().messages.filter((m) => m.id !== id) });
+        await get().send(msg.content, msg.images, msg.replyTo as any);
       },
 
       async editAndResend(messageId, newText) {

@@ -579,6 +579,8 @@ const zhCN = {
   grpYesterday: "昨天",
   grpEarlier: "更早",
   grpPinned: "置顶",
+  sending: "发送中",
+  resendFailed: "发送失败，点击重试",
 };
 
 export default zhCN;
