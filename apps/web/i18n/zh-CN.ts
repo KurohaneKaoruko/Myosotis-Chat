@@ -549,7 +549,7 @@ const zhCN = {
   localMode: "本机模式",
   // connections
   secConnections: "连接",
-  connectionsHint: "聊天软件与编码 Agent 工具",
+  connectionsHint: "把伙伴接到聊天软件里",
   onebotTitle: "聊天软件（OneBot v11）",
   onebotDesc:
     "支持 napcat / Lagrange / LLOneBot 等 OneBot v11 框架。在机器人端把 WebSocket 指向 Hub 的反向 WS 地址，即可让聊天软件里的消息由指定伙伴回复。",
@@ -558,12 +558,6 @@ const zhCN = {
   onebotConnected: "已连接",
   onebotWaiting: "等待连接",
   onebotOff: "未启动",
-  toolsTitle: "编码 Agent 工具",
-  toolsDesc:
-    "本项目自身不具备 Agent 能力，但可以把 claude code、codex 等命令行 Agent 工具接进来，由服务器上的 CLI 执行并把结果带回对话。",
-  toolReady: "已就绪",
-  toolMissing: "未安装",
-  toolsCount: "已发现 {n} 个工具",
   // server connection
   secServer: "服务器",
   serverHint: "连接你的 Myosotis Hub",

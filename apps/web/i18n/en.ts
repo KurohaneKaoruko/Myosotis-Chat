@@ -531,7 +531,7 @@ const en: Partial<Dict> = {
   localMode: "Local mode",
   // connections
   secConnections: "Connections",
-  connectionsHint: "Chat software and coding agent tools",
+  connectionsHint: "Bring your companions into chat apps",
   onebotTitle: "Chat software (OneBot v11)",
   onebotDesc:
     "Works with napcat / Lagrange / LLOneBot and other OneBot v11 frameworks. Point the bot's WebSocket at the hub's reverse WS address and a chosen companion replies to those chats.",
@@ -540,12 +540,6 @@ const en: Partial<Dict> = {
   onebotConnected: "Connected",
   onebotWaiting: "Waiting",
   onebotOff: "Not running",
-  toolsTitle: "Coding agent tools",
-  toolsDesc:
-    "Myosotis itself has no agent capability, but CLI agents such as claude code or codex can be plugged in — the server runs them and streams the result back into the chat.",
-  toolReady: "ready",
-  toolMissing: "not installed",
-  toolsCount: "{n} tools found",
   // server connection
   secServer: "Server",
   serverHint: "Connect to your Myosotis hub",

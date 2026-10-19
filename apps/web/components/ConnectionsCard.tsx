@@ -6,10 +6,9 @@ import { getDbMode } from "../lib/db";
 import { toast } from "sonner";
 
 // ================================================================
-// Connections card — server-side integrations:
-//   * OneBot v11 (napcat / Lagrange / LLOneBot) chat-software bridge
-//   * agent-tool bridge (claude code / codex / gemini CLI …)
-// Both only exist in hub (server) mode.
+// Connections card — chat-software bridge (OneBot v11: napcat,
+// Lagrange, LLOneBot …). Lets the same companions answer inside QQ
+// and friends. Only exists in hub (server) mode.
 // ================================================================
 
 interface OnebotBinding {
@@ -18,19 +17,11 @@ interface OnebotBinding {
   agentId: string;
 }
 
-interface ToolInfo {
-  id: string;
-  label: string;
-  available: boolean;
-  hint?: string;
-}
-
 export default function ConnectionsCard() {
   const remote = getDbMode() === "remote";
   const agents = useStore((s) => s.agents);
   const [bindings, setBindings] = useState<OnebotBinding[]>([]);
   const [status, setStatus] = useState<{ running: boolean; mode?: string; connected?: boolean } | null>(null);
-  const [tools, setTools] = useState<ToolInfo[]>([]);
   const [peer, setPeer] = useState("");
   const [agentId, setAgentId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -43,13 +34,6 @@ export default function ConnectionsCard() {
       setStatus(data.onebot ?? null);
     } catch {
       /* not in hub mode */
-    }
-    try {
-      const res = await fetch("/api/tools");
-      const data = await res.json();
-      setTools(data.tools ?? []);
-    } catch {
-      /* ignore */
     }
   };
 
@@ -92,7 +76,6 @@ export default function ConnectionsCard() {
         <span className="hint">{t("connectionsHint")}</span>
       </h3>
 
-      {/* ---- chat software (OneBot v11) ---- */}
       <div className="section-label" style={{ paddingTop: 6 }}>{t("onebotTitle")}</div>
       <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 10, lineHeight: 1.6 }}>
         {t("onebotDesc")}
@@ -155,38 +138,6 @@ export default function ConnectionsCard() {
         <button className="btn primary" disabled={busy || !peer.trim() || !agentId} onClick={addBinding}>
           {t("add")}
         </button>
-      </div>
-
-      {/* ---- agent tools ---- */}
-      <div className="section-label" style={{ paddingTop: 18 }}>{t("toolsTitle")}</div>
-      <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 10, lineHeight: 1.6 }}>
-        {t("toolsDesc")}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {tools.map((tool) => (
-          <div
-            key={tool.id}
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              padding: "8px 10px", background: "var(--surface-2)", borderRadius: 9, fontSize: 12.5,
-            }}
-          >
-            <span
-              style={{
-                width: 7, height: 7, borderRadius: "50%",
-                background: tool.available ? "#16a34a" : "#94a3b8",
-              }}
-            />
-            <span style={{ color: "var(--text-1)" }}>{tool.label}</span>
-            <span style={{ color: "var(--text-3)", fontSize: 11.5 }}>
-              {tool.available ? t("toolReady") : t("toolMissing")}
-            </span>
-            {tool.hint && <span style={{ color: "var(--text-3)", fontSize: 11, marginLeft: "auto" }}>{tool.hint}</span>}
-          </div>
-        ))}
-        {tools.length === 0 && (
-          <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{tf("toolsCount", { n: 0 })}</div>
-        )}
       </div>
     </div>
   );

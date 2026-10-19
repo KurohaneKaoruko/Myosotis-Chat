@@ -27,7 +27,6 @@ import { createOnebotAdapter } from "./adapter-onebot.ts";
 import { ChannelManager } from "./channels.ts";
 import { bus } from "./events.ts";
 import { UploadStore, MAX_UPLOAD_BYTES } from "./uploads.ts";
-import { AGENT_TOOLS, AgentBridge, probeTools, type AgentToolSpec } from "./agent-bridge.ts";
 import {
   DEFAULT_SETTINGS,
   uid,
@@ -469,8 +468,6 @@ const activeStreams = new Set<AbortController>();
 /** userId+conversationId → controller, so "stop" can cancel the right turn */
 const streamByConvo = new Map<string, AbortController>();
 
-const bridges = new Map<string, AgentBridge>();
-
 app.post("/api/chat", async (req: any, res: any) => {
   const { conversationId, text, images, replyTo } = req.body ?? {};
   const convo = db.getJson<Conversation>("conversations", conversationId);
@@ -508,41 +505,6 @@ app.post("/api/chat", async (req: any, res: any) => {
   });
 
   try {
-    // ---- agent-tool invocation: "/claude <task>" runs the CLI agent ----
-    const toolMatch = /^\/([a-z0-9-]+)\s+([\s\S]+)$/i.exec(String(text ?? "").trim());
-    if (toolMatch) {
-      const spec = AGENT_TOOLS.find((t) => t.id === toolMatch[1].toLowerCase());
-      if (spec) {
-        const task = toolMatch[2].trim();
-        send("status", { text: `${spec.label} running…` });
-        let bridge = bridges.get(req.userId + spec.id);
-        if (!bridge) {
-          bridge = new AgentBridge(spec, process.env.MYO_TOOLS_CWD || DATA_DIR);
-          bridges.set(req.userId + spec.id, bridge);
-        }
-        const toolResult = await bridge.run(task, {
-          onDelta: (d) => send("delta", { delta: d, tool: spec.id }),
-        });
-        // persist the tool output as an assistant message so the chat stays coherent
-        const toolMsg: ChatMessage = {
-          id: uid("msg"),
-          conversationId: convo.id,
-          role: "assistant",
-          content: toolResult.text || `(${spec.label} 无输出)`,
-          createdAt: now(),
-          status: toolResult.code === 0 ? "ok" : "error",
-        };
-        db.putJson("messages", toolMsg.id, userId, toolMsg, {
-          conversation_id: convo.id,
-          created_at: toolMsg.createdAt,
-        });
-        send("message", toolMsg);
-        send("done", { at: now() });
-        res.raw.end();
-        return;
-      }
-    }
-
     if (convo.kind === "group") {
       const agents = db.listJson<Agent>("agents", userId);
       const settings = deepMergeSettings(DEFAULT_SETTINGS, db.getJson<Settings>("settings", userId) ?? {});
@@ -615,52 +577,6 @@ app.post("/api/chat/stop", async (req: any, res: any) => {
     return { ok: true, stopped: true };
   }
   return { ok: true, stopped: false };
-});
-
-// ----------------------------------------------------------------
-// agent-tool bridge (claude / codex / gemini …)
-// ----------------------------------------------------------------
-app.get("/api/tools", async () => {
-  return { tools: await probeTools() };
-});
-
-app.post("/api/tools/:id/run", async (req: any, res: any) => {
-  const spec = AGENT_TOOLS.find((t) => t.id === req.params.id);
-  if (!spec) return res.status(404).send({ error: "unknown-tool" });
-  const { prompt, cwd } = req.body ?? {};
-  if (!prompt?.trim()) return res.status(400).send({ error: "empty-prompt" });
-
-  res.raw.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  let toolsStreamClosed = false;
-  const send = (event: string, data: unknown) => {
-    if (toolsStreamClosed || res.raw.writableEnded || res.raw.destroyed) return;
-    try {
-      res.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    } catch {}
-  };
-  req.raw.on("close", () => {
-    toolsStreamClosed = true;
-  });
-  send("status", { text: `running ${spec.binary}` });
-
-  let bridge = bridges.get(req.userId + spec.id);
-  if (!bridge) {
-    bridge = new AgentBridge(spec, cwd || process.env.MYO_TOOLS_CWD || DATA_DIR);
-    bridges.set(req.userId + spec.id, bridge);
-  }
-  const result = await bridge.run(String(prompt), {
-    onDelta: (d) => send("delta", { delta: d }),
-    onExit: (code) => send("exit", { code }),
-  });
-  send("done", result);
-  if (!res.raw.writableEnded && !res.raw.destroyed) {
-    try { res.raw.end(); } catch {}
-  }
 });
 
 // ----------------------------------------------------------------

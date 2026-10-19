@@ -10,13 +10,13 @@
    浏览器 (Web) ───▶│                                          │
    桌面 (Tauri) ───▶│            Myosotis Hub                  │
    移动 (Tauri) ───▶│  鉴权 · 会话 · 记忆引擎 · 模型调用      │
-                    │  SSE 流式 · OneBot 适配 · Agent 工具桥   │
+                    │  SSE 流式 · OneBot 适配 · 多端实时同步    │
                     └───────────────┬──────────────────────────┘
                                     │
                     ┌───────────────┴──────────────────────────┐
-                    ▼                   ▼                      ▼
-              模型服务商          QQ/聊天软件           claude code / codex …
-              (OpenAI/Anthropic  (napcat · OneBot v11)    (命令行 Agent 工具)
+                    ▼                   ▼
+              模型服务商          QQ/聊天软件
+              (OpenAI/Anthropic  (napcat · OneBot v11)
                /Gemini 兼容)
 ```
 
@@ -29,7 +29,6 @@
 | 🔐 **服务器鉴权** | scrypt 口令哈希 + 会话 Cookie + 可选 TOTP 两步验证；首个账号自助注册 |
 | 💬 **多端一致** | Web / 桌面 / 移动共享同一份数据与记忆；本机模式依然可用（离线优先） |
 | 🔌 **聊天软件接入** | OneBot v11 协议适配（napcat / Lagrange / LLOneBot），私聊直回、群聊 @触发、图片走视觉模型 |
-| 🛠 **Agent 工具桥** | 本项目自身不是 Agent，但可把 claude code、codex 等 CLI Agent 接进来执行任务 |
 | 📡 **多协议模型** | OpenAI 兼容（DeepSeek / Kimi / 智谱 / OpenRouter / Ollama…）、Anthropic、Gemini |
 | 🗣 **语音** | 系统朗读与识别（零配置），可配置云端 TTS/STT |
 | 🎨 **主题** | 7 套主题色 × 明暗模式 × 聊天背景 |
@@ -47,7 +46,7 @@ Myosotis-Chat/
 │  │  ├─ src/auth.ts       scrypt / 会话 / TOTP
 │  │  ├─ src/chat-service.ts  聊天编排（记忆检索→摘要→生成→抽取）
 │  │  ├─ src/adapter-onebot.ts  OneBot v11 适配器
-│  │  ├─ src/agent-bridge.ts    Agent 工具桥（claude/codex…）
+│  │  ├─ src/events.ts      实时事件总线（多端同步）
 │  │  └─ src/index.ts       路由、鉴权中间件、SSE、静态托管
 │  ├─ web/               浏览器端（React 19 + Vite），同时被桌面/移动壳复用
 │  └─ desktop/           Tauri 2 壳（桌面 + 移动）
@@ -126,7 +125,6 @@ pnpm --filter @myosotis/desktop tauri android dev
 | `ONEBOT_ACCESS_TOKEN` | — | reverse 模式校验用 token（napcat 用 `?access-token=` 传） |
 | `ONEBOT_URL` | — | forward 模式的 ws 地址，如 `ws://127.0.0.1:3001` |
 | `ONEBOT_TOKEN` | — | forward 模式的鉴权 token |
-| `MYO_TOOLS_CWD` | `<data>` | Agent 工具的工作目录 |
 
 ## 接入聊天软件（napcat / OneBot v11）
 
@@ -140,19 +138,10 @@ pnpm --filter @myosotis/desktop tauri android dev
 
 也可在「设置 → 连接」里直接改适配器运行参数（模式、地址、端口、token），无需重启。
 
-## 接入 Agent 工具（claude code / codex …）
-
-本项目**不实现** Agent 逻辑，只做桥接：在服务器上 spawn 对应 CLI，把输出流回对话。
-
-- 「设置 → 连接」可看到服务器上安装了哪些工具（`claude` / `codex` / `gemini` / `qwen` / `aider`）。
-- 聊天框输入 `/claude 重构这个函数` 即可调用；工具输出会作为一条助手消息留在对话里。
-- 工具自身的登录态由 CLI 自己管理（`claude login` / `codex login`），Hub 不接触凭据。
-
 ## 安全说明
 
 - 口令使用 scrypt 加盐哈希；会话为 HttpOnly Cookie（SameSite=Lax，可选 Secure）。
 - 记忆、会话、模型配置按用户隔离，跨账号不可见。
-- Agent 工具以服务器用户身份运行，**请仅在受信任的服务器上启用**。
 - 建议始终通过 HTTPS 暴露 Hub。
 
 ## 许可
