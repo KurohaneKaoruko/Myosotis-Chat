@@ -31,3 +31,5 @@ openspec/
 # listed here anyway, so the intent survives future pattern changes.
 !.gitignore
 !src-tauri/.gitignore
+data/
+data/
