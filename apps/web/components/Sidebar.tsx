@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useStore } from "../store";
 import { Avatar, Icon, Menu, PromptModal, TipFor } from "./ui";
 import GroupEditor from "./GroupEditor";
 import { t, tf } from "../i18n";
 import { formatTime, plainPreview } from "@myosotis/core";
+import { allDrafts } from "../lib/drafts";
 import type { Agent, Conversation } from "@myosotis/core";
 
 type Filter = "all" | "pinned" | "archived";
@@ -38,6 +39,7 @@ function GroupAvatar({ agents }: { agents: Agent[] }) {
  * chat is labelled by its agent, a group chat by its title and members.
  */
 export default function Sidebar() {
+  const drafts = allDrafts();
   const settings = useStore((s) => s.settings);
   const agents = useStore((s) => s.agents);
   const convos = useStore((s) => s.convos);
@@ -95,6 +97,44 @@ export default function Sidebar() {
           .filter((a) => !q || a.name.toLowerCase().includes(q));
 
   const empty = rows.length === 0 && orphanAgents.length === 0;
+
+  // ---- date grouping (chat-app style: pinned / today / yesterday / earlier) ----
+  const dayKey = (ts: number) => {
+    const d = new Date(ts);
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+    if (ts >= startOfToday) return "today";
+    if (ts >= startOfYesterday) return "yesterday";
+    return "earlier";
+  };
+  const groupRows = (() => {
+    const out: Array<{ key: string; label: string | null; items: typeof rows }> = [];
+    const pinned = rows.filter((r) => r.convo.pinned);
+    const rest = rows.filter((r) => !r.convo.pinned);
+    if (pinned.length) out.push({ key: "pinned", label: t("grpPinned"), items: pinned });
+    for (const g of ["today", "yesterday", "earlier"] as const) {
+      const items = rest.filter((r) => dayKey(r.convo.updatedAt) === g);
+      if (items.length) {
+        out.push({
+          key: g,
+          label: g === "today" ? t("grpToday") : g === "yesterday" ? t("grpYesterday") : t("grpEarlier"),
+          items,
+        });
+      }
+    }
+    return out;
+  })();
+
+  // swipe-to-reveal actions (mobile)
+  const [swipe, setSwipe] = useState<{ id: string; off: number } | null>(null);
+  const swipeStart = useRef<{ x: number; y: number; id: string } | null>(null);
+  const swipeOffset = useRef<{ id: string; off: number } | null>(null);
+
+  // long-press / right-click action sheet for a conversation row
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const setConvoMenuFor = (id: string) => setSheetFor(id);
+  const sheetConvo = convos.find((c) => c.id === sheetFor) ?? null;
 
   const confirmDelete = (title: string, message: string, onOk: () => void) =>
     useStore
@@ -158,7 +198,10 @@ export default function Sidebar() {
         )}
         {agents.length > 0 && empty && <div className="agent-empty-hint">{t("noConvoMatch")}</div>}
 
-        {rows.map(({ convo, agent }) => {
+        {groupRows.map((group) => (
+          <div key={group.key} className="convo-group">
+            {group.label && <div className="group-title">{group.label}</div>}
+            {group.items.map(({ convo, agent }) => {
           const isActive = convo.id === activeConvoId && view === "chat";
           const isGroup = convo.kind === "group";
           const groupMembers = isGroup
@@ -195,8 +238,59 @@ export default function Sidebar() {
           return (
             <div
               key={convo.id}
-              className={`convo-item ${isActive ? "active" : ""}`}
+              className="convo-swipe"
+              onTouchStart={(e) => {
+                const t = e.touches[0];
+                swipeStart.current = { x: t.clientX, y: t.clientY, id: convo.id };
+              }}
+              onTouchMove={(e) => {
+                const st = swipeStart.current;
+                if (!st || st.id !== convo.id) return;
+                const t = e.touches[0];
+                const dx = t.clientX - st.x;
+                if (Math.abs(t.clientY - st.y) > 24) {
+                  swipeStart.current = null;
+                  return;
+                }
+                if (dx < 0) {
+                  const off = Math.max(-88, Math.min(0, dx));
+                  swipeOffset.current = { id: convo.id, off };
+                  setSwipe({ id: convo.id, off });
+                }
+              }}
+              onTouchEnd={() => {
+                const st = swipeOffset.current;
+                swipeStart.current = null;
+                swipeOffset.current = null;
+                if (!st || st.id !== convo.id) return;
+                // snap open past the threshold, otherwise close
+                const open = st.off < -44;
+                setSwipe(open ? { id: convo.id, off: -88 } : null);
+              }}
+            >
+            <div
+              className={`convo-item ${isActive ? "active" : ""} ${swipe?.id === convo.id ? "swiped" : ""}`}
+              style={swipe?.id === convo.id ? { transform: `translateX(${swipe.off}px)` } : undefined}
               onClick={() => openConversation(convo.id)}
+              onContextMenu={(e) => {
+                // desktop right-click → same menu as the ⋯ button
+                e.preventDefault();
+                setConvoMenuFor(convo.id);
+              }}
+              onTouchStart={(e) => {
+                // long-press on touch devices opens the conversation menu
+                const timer = setTimeout(() => {
+                  setConvoMenuFor(convo.id);
+                  if (navigator.vibrate) navigator.vibrate(12);
+                }, 480);
+                const cancel = () => {
+                  clearTimeout(timer);
+                  e.currentTarget.removeEventListener("touchend", cancel);
+                  e.currentTarget.removeEventListener("touchmove", cancel);
+                };
+                e.currentTarget.addEventListener("touchend", cancel);
+                e.currentTarget.addEventListener("touchmove", cancel);
+              }}
               title={isGroup ? convo.title : tf("chatWith", { name: agent!.name })}
             >
               {isGroup ? <GroupAvatar agents={groupMembers} /> : <Avatar agent={agent!} size={40} />}
@@ -215,6 +309,14 @@ export default function Sidebar() {
                     {plainPreview(convo.lastMessage) || "…"}
                   </span>
                 </div>
+                {(convo.unread ?? 0) > 0 && (
+                  <span className="unread-badge">{(convo.unread ?? 0) > 99 ? "99+" : convo.unread}</span>
+                )}
+                {drafts[convo.id] && (
+                  <span className="draft-mark" title={t("hasDraft")}>
+                    {drafts[convo.id].slice(0, 18)}
+                  </span>
+                )}
                 {(convo.tags?.length ?? 0) > 0 && (
                   <div className="convo-tags">
                     {convo.tags!.map((tg) => (
@@ -281,8 +383,35 @@ export default function Sidebar() {
                 />
               </div>
             </div>
+            <div className="convo-swipe-ops">
+              <button
+                className={convo.pinned ? "" : "sw-op"}
+                onClick={() => {
+                  pinConversation(convo.id, !convo.pinned);
+                  setSwipe(null);
+                }}
+              >
+                <Icon name="pin" size={16} />
+              </button>
+              <button
+                className="sw-op danger"
+                onClick={() => {
+                  setSwipe(null);
+                  confirmDelete(
+                    t("deleteConvoTitle"),
+                    tf("deleteConvoMsg", { title: convo.title || agent?.name || "" }),
+                    () => deleteConversation(convo.id)
+                  );
+                }}
+              >
+                <Icon name="trash" size={16} />
+              </button>
+            </div>
+            </div>
           );
-        })}
+            })}
+          </div>
+        ))}
 
         {orphanAgents.map((agent) => (
           <div
@@ -302,6 +431,69 @@ export default function Sidebar() {
           </div>
         ))}
       </div>
+
+      {sheetConvo && (
+        <div
+          className="msg-sheet convo-sheet"
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) setSheetFor(null);
+          }}
+        >
+          <div className="sheet-time">{sheetConvo.title || t("newChat")}</div>
+          <button
+            onClick={() => {
+              pinConversation(sheetConvo.id, !sheetConvo.pinned);
+              setSheetFor(null);
+            }}
+          >
+            <Icon name="pin" size={15} />
+            {sheetConvo.pinned ? t("pinOff") : t("pinOn")}
+          </button>
+          <button
+            onClick={() => {
+              archiveConversation(sheetConvo.id, !sheetConvo.archived);
+              setSheetFor(null);
+            }}
+          >
+            <Icon name="book" size={15} />
+            {sheetConvo.archived ? t("unarchive") : t("archive")}
+          </button>
+          <button
+            onClick={() => {
+              duplicateConversation(sheetConvo.id);
+              setSheetFor(null);
+            }}
+          >
+            <Icon name="copy" size={15} />
+            {t("duplicateConvo")}
+          </button>
+          <button
+            onClick={() => {
+              const c = sheetConvo;
+              setSheetFor(null);
+              setTagging(c);
+            }}
+          >
+            <Icon name="edit" size={15} />
+            {t("editTags")}
+          </button>
+          <button
+            className="danger"
+            onClick={() => {
+              const c = sheetConvo;
+              setSheetFor(null);
+              confirmDelete(
+                t("deleteConvoTitle"),
+                tf("deleteConvoMsg", { title: c.title || "" }),
+                () => deleteConversation(c.id)
+              );
+            }}
+          >
+            <Icon name="trash" size={15} />
+            {t("deleteConvo")}
+          </button>
+        </div>
+      )}
 
       <div className="sidebar-foot">
         <span>🔒 {t("dataLocalOnly")}</span>

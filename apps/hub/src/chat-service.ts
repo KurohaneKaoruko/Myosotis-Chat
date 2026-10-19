@@ -27,6 +27,7 @@ import {
   type Settings,
 } from "@myosotis/core";
 import type { HubDB } from "./db.ts";
+import { bus } from "./events.ts";
 
 export interface TurnCallbacks {
   onDelta?: (text: string) => void;
@@ -81,6 +82,8 @@ export async function runSingleTurn(
   };
   db.putJson("messages", userMsg.id, userId, userMsg, { conversation_id: e.convo.id, created_at: userMsg.createdAt });
   const convo0 = touchConvo(db, userId, e.convo, trimmed);
+  bus.emit(userId, { type: "message", conversationId: e.convo.id, message: userMsg });
+  bus.emit(userId, { type: "conversation", conversation: convo0 });
 
   // 2. resolve chat model (vision falls back to chat)
   const hasImages = !!images?.length;
@@ -125,7 +128,9 @@ export async function runSingleTurn(
     assistantMsg.status = "error";
   }
   db.putJson("messages", assistantMsg.id, userId, assistantMsg, { conversation_id: convo.id, created_at: assistantMsg.createdAt });
-  touchConvo(db, userId, convo, assistantMsg.content);
+  const convoAfter = touchConvo(db, userId, convo, assistantMsg.content);
+  bus.emit(userId, { type: "message", conversationId: convo.id, message: assistantMsg });
+  bus.emit(userId, { type: "conversation", conversation: convoAfter });
   cb.onMessage?.(assistantMsg);
 
   // 5. background jobs: title & memory extraction (fire-and-forget)
@@ -177,6 +182,7 @@ export async function runGroupTurn(
   };
   db.putJson("messages", userMsg.id, userId, userMsg, { conversation_id: e.convo.id, created_at: userMsg.createdAt });
   touchConvo(db, userId, e.convo, text);
+  bus.emit(userId, { type: "message", conversationId: e.convo.id, message: userMsg });
 
   const replyOrder = replyingParticipants(participants, text, e.agents);
   if (!replyOrder.length) return;
@@ -228,7 +234,9 @@ export async function runGroupTurn(
       assistantMsg.status = "error";
     }
     db.putJson("messages", assistantMsg.id, userId, assistantMsg, { conversation_id: e.convo.id, created_at: assistantMsg.createdAt });
-    touchConvo(db, userId, e.convo, assistantMsg.content);
+    const after = touchConvo(db, userId, e.convo, assistantMsg.content);
+    bus.emit(userId, { type: "message", conversationId: e.convo.id, message: assistantMsg });
+    bus.emit(userId, { type: "conversation", conversation: after });
     cb.onMessage?.(assistantMsg);
   }
 }

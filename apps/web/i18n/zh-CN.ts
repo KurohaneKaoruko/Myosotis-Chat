@@ -574,6 +574,11 @@ const zhCN = {
   hubOk: "连接正常",
   hubNeedsSetup: "连接正常（需要创建账号）",
   hubSwitched: "已切换到服务器模式",
+  hasDraft: "有草稿",
+  grpToday: "今天",
+  grpYesterday: "昨天",
+  grpEarlier: "更早",
+  grpPinned: "置顶",
 };
 
 export default zhCN;

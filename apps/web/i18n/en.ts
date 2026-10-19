@@ -556,6 +556,11 @@ const en: Partial<Dict> = {
   hubOk: "Connection OK",
   hubNeedsSetup: "Connection OK (account setup needed)",
   hubSwitched: "Switched to server mode",
+  hasDraft: "Draft",
+  grpToday: "Today",
+  grpYesterday: "Yesterday",
+  grpEarlier: "Earlier",
+  grpPinned: "Pinned",
 };
 
 export default en;

@@ -145,6 +145,10 @@ export interface Conversation {
   scenarioId?: string;
   /** per-conversation story progress: openedAt marks the narrative as inserted */
   storyState?: { openedAt?: number; triggeredEventIds: string[] };
+  /** last time the owner opened this conversation (unread badge base) */
+  lastReadAt?: number;
+  /** server-computed unread assistant messages (not persisted) */
+  unread?: number;
   createdAt: number;
   updatedAt: number;
 }

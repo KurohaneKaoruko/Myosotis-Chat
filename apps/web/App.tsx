@@ -89,6 +89,38 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // edge-swipe back: drag from the left edge to reopen the conversation list
+  useEffect(() => {
+    if (!("ontouchstart" in window)) return;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+    const onStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      tracking = startX < 28;
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (!tracking) return;
+      tracking = false;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      // horizontal swipe to the right, long enough, mostly horizontal
+      if (dx > 70 && Math.abs(dy) < 50) {
+        const st = useStore.getState();
+        if (!st.sidebarOpen) st.setSidebar(true);
+      }
+    };
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, []);
+
   // Android back gesture (and browser back): close overlays one by one
   useEffect(() => {
     const push = () => history.pushState({ myosotis: 1 }, "");
@@ -107,8 +139,7 @@ export default function App() {
       }
       // nothing open: allow default behavior (app exit on Android)
     };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    window.addEventListener("popstate", onPop);    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   const dark =
@@ -210,6 +241,9 @@ function TabBar() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const setSidebar = useStore((s) => s.setSidebar);
+  // subscribe so the unread dot reacts to live events
+  const convos = useStore((s) => s.convos);
+  const unread = convos.reduce((n, c) => n + (c.unread ?? 0), 0);
   return (
     <nav className="tabbar">
       {TABS.map((tab) => (
@@ -223,6 +257,7 @@ function TabBar() {
         >
           <Icon name={tab.icon} />
           {t(tab.labelKey)}
+          {tab.view === "chat" && unread > 0 && <span className="tab-dot" />}
         </button>
       ))}
     </nav>

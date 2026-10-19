@@ -199,6 +199,22 @@ export class HubDB {
     return this.listJson<MemoryItem>("memories", userId);
   }
 
+  // ---------------- unread counts ----------------
+  /**
+   * Number of assistant messages newer than the conversation's
+   * lastReadAt. Used for the red badge in the conversation list.
+   */
+  unreadCount(userId: string, convoId: string, lastReadAt: number): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM messages
+         WHERE conversation_id = ? AND user_id = ? AND created_at > ?
+           AND json_extract(data, '$.role') = 'assistant'`
+      )
+      .get(convoId, userId, lastReadAt) as any;
+    return Number(row?.n ?? 0);
+  }
+
   // ---------------- channel bindings ----------------
   getBinding(platform: string, channelUserId: string): { userId: string; agentId: string } | undefined {
     const row = this.db

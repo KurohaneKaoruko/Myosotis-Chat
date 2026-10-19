@@ -25,6 +25,7 @@ import {
 import { runSingleTurn, runGroupTurn, listMessages } from "./chat-service.ts";
 import { createOnebotAdapter } from "./adapter-onebot.ts";
 import { ChannelManager } from "./channels.ts";
+import { bus } from "./events.ts";
 import { AGENT_TOOLS, AgentBridge, probeTools, type AgentToolSpec } from "./agent-bridge.ts";
 import {
   DEFAULT_SETTINGS,
@@ -34,6 +35,7 @@ import {
   type Agent,
   type ChatMessage,
   type Conversation,
+  type MemoryItem,
   type ModelConfig,
   type Provider,
   type Scenario,
@@ -193,25 +195,43 @@ const TABLES = ["providers", "models", "agents", "prompts", "scenarios"] as cons
 app.get("/api/data", async (req: any) => {
   bindUser(req.userId);
   const [providers, models, agents, prompts, scenarios, convos, memories] = await Promise.all([
-    db.listJson("providers", req.userId),
-    db.listJson("models", req.userId),
-    db.listJson("agents", req.userId, "created_at ASC"),
+    db.listJson("providers", req.userId) as Provider[],
+    db.listJson("models", req.userId) as ModelConfig[],
+    db.listJson("agents", req.userId, "created_at ASC") as Agent[],
     db.listJson("prompts", req.userId),
-    db.listJson("scenarios", req.userId),
-    db.listJson("conversations", req.userId, "updated_at DESC"),
+    db.listJson("scenarios", req.userId) as Scenario[],
+    db.listJson("conversations", req.userId, "updated_at DESC") as Conversation[],
     db.listMemoriesForUser(req.userId),
   ]);
   const settings = db.getJson<Settings>("settings", req.userId);
+  // server-computed unread counts for the conversation list badges
+  const conversations = convos.map((c) => ({
+    ...c,
+    unread: db.unreadCount(req.userId, c.id, c.lastReadAt ?? 0),
+  }));
   return {
     providers,
     models,
     agents,
     prompts,
     scenarios,
-    conversations: convos,
+    conversations,
     memories,
     settings: settings ?? DEFAULT_SETTINGS,
   };
+});
+
+// mark a conversation as read (clears its badge on every device)
+app.post("/api/conversations/:id/read", async (req: any, res: any) => {
+  bindUser(req.userId);
+  // clients may POST with an empty body → don't let fastify reject it
+  if (req.body === undefined) req.body = {};
+  const convo = db.getJson<Conversation>("conversations", req.params.id);
+  if (!convo) return res.status(404).send({ error: "not-found" });
+  const updated = { ...convo, lastReadAt: now() };
+  db.putJson("conversations", convo.id, req.userId, updated, { agent_id: convo.agentId, updated_at: convo.updatedAt });
+  bus.emit(req.userId, { type: "conversation", conversation: updated });
+  return { ok: true };
 });
 
 app.put("/api/data/settings", async (req: any) => {
@@ -239,10 +259,17 @@ for (const t of TABLES) {
     bindUser(req.userId);
     const item = req.body as any;
     db.putJson(t, req.params.id, req.userId, item, extraColsFor(t, item));
+    if (t === "agents") bus.emit(req.userId, { type: "agent", agent: item as Agent });
+    else bus.emit(req.userId, { type: "settings" });
     return { ok: true };
   });
   app.delete(`/api/data/${t}/:id`, async (req: any) => {
     db.deleteJson(t, req.params.id);
+    if (t === "agents") {
+      const agent = db.getJson<Agent>("agents", req.params.id);
+      if (agent) bus.emit(req.userId, { type: "agent", agent, removed: true });
+    }
+    bus.emit(req.userId, { type: "settings" });
     return { ok: true };
   });
 }
@@ -272,11 +299,13 @@ app.put("/api/memories/:id", async (req: any) => {
     agent_id: String(item.agentId ?? ""),
     updated_at: item.updatedAt ?? Date.now(),
   });
+  bus.emit(req.userId, { type: "memory", memory: item as MemoryItem });
   return { ok: true };
 });
 
 app.delete("/api/memories/:id", async (req: any) => {
   db.deleteJson("memories", req.params.id);
+  bus.emit(req.userId, { type: "memory", memory: { id: req.params.id } as MemoryItem });
   return { ok: true };
 });
 
@@ -307,6 +336,7 @@ app.post("/api/conversations", async (req: any, res: any) => {
     ...(kind === "group" ? { participants: participants ?? [] } : {}),
   };
   db.putJson("conversations", convo.id, req.userId, convo, { agent_id: convo.agentId, updated_at: convo.updatedAt });
+  bus.emit(req.userId, { type: "conversation", conversation: convo });
   return convo;
 });
 
@@ -314,7 +344,9 @@ app.put("/api/conversations/:id", async (req: any, res: any) => {
   bindUser(req.userId);
   const existing = db.getJson<Conversation>("conversations", req.params.id);
   if (!existing) return res.status(404).send({ error: "not-found" });
-  db.putJson("conversations", req.params.id, req.userId, { ...existing, ...req.body, id: req.params.id }, { agent_id: existing.agentId, updated_at: now() });
+  const merged = { ...existing, ...req.body, id: req.params.id } as Conversation;
+  db.putJson("conversations", req.params.id, req.userId, merged, { agent_id: existing.agentId, updated_at: now() });
+  bus.emit(req.userId, { type: "conversation", conversation: merged });
   return { ok: true };
 });
 
@@ -324,6 +356,7 @@ app.delete("/api/conversations/:id", async (req: any, res: any) => {
   if (!convo) return res.status(404).send({ error: "not-found" });
   db.raw.prepare("DELETE FROM messages WHERE conversation_id = ?").run(req.params.id);
   db.deleteJson("conversations", req.params.id);
+  bus.emit(req.userId, { type: "clear-conversation", conversationId: req.params.id });
   return { ok: true };
 });
 
@@ -338,7 +371,9 @@ app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
   bindUser(req.userId);
   const existing = db.getJson<ChatMessage>("messages", req.params.mid);
   if (!existing) return res.status(404).send({ error: "not-found" });
-  db.putJson("messages", req.params.mid, req.userId, { ...existing, ...req.body, id: req.params.mid }, { conversation_id: req.params.id, created_at: existing.createdAt });
+  const merged = { ...existing, ...req.body, id: req.params.mid } as ChatMessage;
+  db.putJson("messages", req.params.mid, req.userId, merged, { conversation_id: req.params.id, created_at: existing.createdAt });
+  bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: merged });
   return { ok: true };
 });
 
@@ -350,7 +385,7 @@ app.post("/api/conversations/:id/messages", async (req: any, res: any) => {
   const m = req.body as ChatMessage;
   if (!m?.id || typeof m.content !== "string") return res.status(400).send({ error: "bad-message" });
   db.putJson("messages", m.id, req.userId, m, { conversation_id: req.params.id, created_at: m.createdAt ?? now() });
-  remoteDBcacheSync(m);
+  bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: m });
   return { ok: true };
 });
 
@@ -358,6 +393,7 @@ function remoteDBcacheSync(_m: ChatMessage) {} // placeholder; cache lives clien
 
 app.delete("/api/conversations/:id/messages/:mid", async (req: any) => {
   db.deleteJson("messages", req.params.mid);
+  bus.emit(req.userId, { type: "delete-message", conversationId: req.params.id, messageId: req.params.mid });
   return { ok: true };
 });
 
@@ -367,6 +403,52 @@ app.get("/api/memories", async (req: any) => {
   const agentId = (req.query as any).agentId as string | undefined;
   const all = db.listMemoriesForUser(req.userId);
   return agentId ? all.filter((m) => m.agentId === agentId) : all;
+});
+
+// ----------------------------------------------------------------
+// realtime event stream (cross-device sync)
+// ----------------------------------------------------------------
+app.get("/api/events", async (req: any, res: any) => {
+  const userId = req.userId;
+  if (!userId) return res.status(401).send({ error: "unauthorized" });
+
+  res.raw.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.raw.write(":connected\n\n");
+
+  const clientId = uid("evt");
+  let closed = false;
+  bus.add({
+    id: clientId,
+    userId,
+    write: (event) => {
+      if (closed || res.raw.writableEnded || res.raw.destroyed) return;
+      try {
+        res.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      } catch {}
+    },
+    close: () => {
+      closed = true;
+      bus.remove(clientId);
+    },
+  });
+
+  const heartbeat = setInterval(() => {
+    if (closed || res.raw.writableEnded || res.raw.destroyed) return;
+    try {
+      res.raw.write(`event: ping\ndata: {"type":"ping","t":${now()}}\n\n`);
+    } catch {}
+  }, 25000);
+
+  req.raw.on("close", () => {
+    closed = true;
+    clearInterval(heartbeat);
+    bus.remove(clientId);
+  });
 });
 
 // ----------------------------------------------------------------

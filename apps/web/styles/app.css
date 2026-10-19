@@ -881,6 +881,126 @@ button {
   border-top-left-radius: 18px;
 }
 
+/* date-grouped conversation list (pinned / today / yesterday / earlier) */
+.convo-group {
+  margin-bottom: 6px;
+}
+.convo-group .group-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 10px 10px 4px;
+  user-select: none;
+}
+
+/* conversation long-press sheet (mobile) */
+.convo-sheet {
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  min-width: 0;
+  top: auto;
+}
+
+/* swipe-to-reveal conversation actions (mobile) */
+.convo-swipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 13px;
+}
+.convo-swipe .convo-item {
+  position: relative;
+  z-index: 1;
+  background: var(--sidebar-bg);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.convo-swipe-ops {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+}
+.convo-swipe-ops button {
+  width: 44px;
+  border: none;
+  background: var(--surface-3);
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.convo-swipe-ops button.danger {
+  background: var(--danger);
+  color: #fff;
+}
+.convo-swipe-ops button:active {
+  filter: brightness(0.92);
+}
+
+/* draft indicator on conversation rows */
+.convo-item .draft-mark {
+  display: block;
+  color: var(--text-3);
+  font-size: 11px;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  max-width: 100%;
+}
+
+/* unread badge on conversation rows */
+.convo-item .unread-badge {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
+  animation: badge-pop 0.24s cubic-bezier(0.22, 1.4, 0.36, 1) both;
+}
+@keyframes badge-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.convo-item .unread-badge + .convo-ops,
+.convo-item:hover .unread-badge {
+  display: none;
+}
+
+/* unread badge on the mobile tab bar */
+.tabbar .nav-item .tab-dot {
+  position: absolute;
+  top: 5px;
+  right: 50%;
+  margin-right: -16px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--sidebar-bg);
+}
+
 /* quiet compact timestamp shown under grouped bubbles (touch only) */
 .time-float {
   display: none;

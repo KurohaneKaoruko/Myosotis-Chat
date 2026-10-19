@@ -5,6 +5,7 @@ import { Icon } from "./ui";
 import { SttSession, sttSupported, speakSmart, stopAudio } from "../lib/speech";
 import { sttTranscribe } from "@myosotis/core";
 import { db } from "../lib/db";
+import { getDraft, setDraft, clearDraft } from "../lib/drafts";
 import { resolveModel } from "@myosotis/core";
 import { t } from "../i18n";
 import type { Agent } from "@myosotis/core";
@@ -148,6 +149,22 @@ export default function Composer() {
     }
   }, [text]);
 
+  // draft handling: remember what was typed per conversation
+  const draftConvoRef = useRef<string | null>(null);
+  useEffect(() => {
+    // conversation switched → persist the old draft, restore the new one
+    if (draftConvoRef.current === activeConvoId) return;
+    if (draftConvoRef.current) setDraft(draftConvoRef.current, text);
+    draftConvoRef.current = activeConvoId;
+    setText(activeConvoId ? getDraft(activeConvoId) : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConvoId]);
+
+  // keep the draft in sync while typing
+  useEffect(() => {
+    if (draftConvoRef.current) setDraft(draftConvoRef.current, text);
+  }, [text]);
+
   // images dropped onto the chat area land here
   useEffect(() => {
     if (pendingImages.length) {
@@ -163,6 +180,7 @@ export default function Composer() {
     send(t, images.length ? images : undefined, replyTo ?? undefined);
     setText("");
     setImages([]);
+    clearDraft(activeConvoId);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {

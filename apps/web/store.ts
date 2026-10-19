@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { toast } from "sonner";
 import { setLanguage, t, tf, dateLocale } from "./i18n";
 import { db, exportAll, importAll, getDbMode, remoteDB, apiBase } from "./lib/db";
+import { connectLive, disconnectLive, clearUnread } from "./lib/live";
 import { mergeAgentConversations } from "./lib/migrate";
 import { chatComplete, embedText } from "@myosotis/core";
 import { buildContextMessages, extractMemories, maybeSummarize, generateTitle, retrieveMemories } from "@myosotis/core";
@@ -322,6 +323,8 @@ export const useStore = create<AppState>()(
               settings,
               ready: true,
             });
+            // live cross-device sync
+            connectLive();
             const last = get().activeConvoId;
             if (last && convos.some((c) => c.id === last)) await get().openConversation(last);
             else if (convos[0]) await get().openConversation(convos[0].id);
@@ -656,6 +659,17 @@ export const useStore = create<AppState>()(
         }
         messages.sort((a, b) => a.createdAt - b.createdAt);
         set({ activeConvoId: id, messages, view: "chat", sidebarOpen: false });
+        // clear the unread badge (server-side, so all devices agree)
+        if (getDbMode() === "remote") {
+          clearUnread(id);
+          fetch(apiBase() + `/api/conversations/${encodeURIComponent(id)}/read`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: "{}",
+          }).catch(() => {});
+          set((s: any) => ({ convos: s.convos.map((c: Conversation) => (c.id === id ? { ...c, unread: 0 } : c)) }));
+        }
       },
       async deleteConversation(id) {
         if (getDbMode() === "remote") {
