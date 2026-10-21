@@ -109,8 +109,17 @@ export default function SettingsView() {  return (
         <ConnectionsCard />
         <BackupCard />
         <DataCard />
-        <div className="card" style={{ textAlign: "center", color: "var(--text-3)", fontSize: 12 }}>
-          {t("aboutLine")}
+        <div className="card" style={{ textAlign: "center", color: "var(--text-3)", fontSize: 12, lineHeight: 1.9 }}>
+          <div>{t("aboutLine")}</div>
+          <div>{t("aboutLicense")}</div>
+          <a
+            href="https://www.gnu.org/licenses/gpl-3.0.html"
+            target="_blank"
+            rel="noreferrer noopener"
+            style={{ color: "var(--accent)", textDecoration: "none" }}
+          >
+            GNU GPL v3.0
+          </a>
         </div>
       </div>
     </div>

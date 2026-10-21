@@ -290,7 +290,8 @@ const en: Partial<Dict> = {
   importConfirmTitle: "Import backup",
   importConfirmMsg: "Importing overwrites ALL local data (chats, agents, memories, settings). Continue?",
   overwriteImport: "Overwrite & import",
-  aboutLine: "Myosotis v0.2.0 · 100% local storage, direct to model providers",
+  aboutLine: "Myosotis v0.3.0",
+  aboutLicense: "Open source under GNU GPL v3.0+ · your data lives on your server",
 
   quickPick: "Quick pick a provider",
   groupHot: "Popular",

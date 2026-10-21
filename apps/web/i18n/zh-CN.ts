@@ -298,7 +298,8 @@ const zhCN = {
   importConfirmTitle: "导入备份",
   importConfirmMsg: "导入将覆盖当前所有数据（对话、智能体、记忆、设置），确定继续？",
   overwriteImport: "覆盖导入",
-  aboutLine: "Myosotis v0.2.0 · 数据 100% 本地存储，直连模型服务商",
+  aboutLine: "Myosotis v0.3.0",
+  aboutLicense: "基于 GNU GPL v3.0+ 开源 · 数据存储于你的服务器",
 
   // providers
   quickPick: "快速选择服务商",

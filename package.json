@@ -2,7 +2,7 @@
   "name": "myosotis-chat",
   "private": true,
   "version": "0.3.0",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "packageManager": "pnpm@12.9.1",
   "engines": {
     "node": ">=22"

@@ -146,4 +146,27 @@ pnpm --filter @myosotis/desktop tauri android dev
 
 ## 许可
 
-MIT
+本项目采用 **GNU GPL v3.0 或更高版本**（SPDX: `GPL-3.0-or-later`）许可。
+
+```
+Myosotis Chat — 勿忘我
+Copyright (C) 2026  Myosotis Chat contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
+
+完整条款见 [LICENSE](./LICENSE)。
+
+> GPL 是 copyleft 许可：分发本项目或其衍生作品时，必须以相同许可发布并提供对应源码。
+
