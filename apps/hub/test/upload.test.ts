@@ -1,31 +1,18 @@
+import { API, MOCK_API, login, api, seedBasics, promptLog, resetLog, chatPrompt } from "./fixtures.ts";
+
 // Verifies the image pipeline: upload → message stores only the URL →
 // the file is served back. Also checks content-addressed dedupe.
-const API = "http://127.0.0.1:8791";
 
 // 1×1 red PNG
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
-async function login() {
-  const res = await fetch(`${API}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "nightx", password: "test12345" }),
-  });
-  return (res.headers.get("set-cookie") || "").split(";")[0];
-}
 
-async function api(cookie: string, path: string, init?: RequestInit) {
-  const res = await fetch(API + path, {
-    ...init,
-    headers: { "content-type": "application/json", cookie, ...(init?.headers ?? {}) },
-  });
-  return res.json();
-}
 
 async function main() {
-  const cookie = await login();
+  const { cookie } = await login();
   if (!cookie) throw new Error("login failed");
+  await seedBasics(cookie);
 
   // upload
   const up = await api(cookie, "/api/upload", { method: "POST", body: JSON.stringify({ data: PNG }) });

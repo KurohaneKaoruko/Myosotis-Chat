@@ -1,28 +1,15 @@
+import { API, MOCK_API, login, api, seedBasics, promptLog, resetLog, chatPrompt } from "./fixtures.ts";
+
 // Verifies that "stop generation" actually aborts the upstream call:
 // the slow mock reports how many streams were cut short vs completed.
-const API = "http://127.0.0.1:8791";
 const SLOW = "http://127.0.0.1:9912/v1";
 
-async function login() {
-  const res = await fetch(`${API}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "nightx", password: "test12345" }),
-  });
-  return (res.headers.get("set-cookie") || "").split(";")[0];
-}
 
-async function api(cookie: string, path: string, init?: RequestInit) {
-  const res = await fetch(API + path, {
-    ...init,
-    headers: { "content-type": "application/json", cookie, ...(init?.headers ?? {}) },
-  });
-  return res.json();
-}
 
 async function main() {
-  const cookie = await login();
+  const { cookie } = await login();
   if (!cookie) throw new Error("login failed");
+  await seedBasics(cookie);
 
   // point the chat model at the slow mock
   await api(cookie, "/api/data/providers/pslow", {

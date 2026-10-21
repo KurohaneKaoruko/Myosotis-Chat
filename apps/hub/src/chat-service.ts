@@ -24,6 +24,8 @@ import {
   type MemoryItem,
   type ModelConfig,
   type Provider,
+  type Scenario,
+  type ScenarioEvent,
   type Settings,
 } from "@myosotis/core";
 import type { HubDB } from "./db.ts";
@@ -59,6 +61,64 @@ function touchConvo(db: HubDB, userId: string, convo: Conversation, lastText: st
 }
 
 // ----------------------------------------------------------------
+// Story mode (剧情模式)
+// ----------------------------------------------------------------
+
+export interface StoryContext {
+  scenario: Scenario;
+  /** events fired on this very turn, injected as "just happened" */
+  newlyTriggered: ScenarioEvent[];
+}
+
+/**
+ * Resolve the story context for this turn: the scenario in play, the
+ * events that just fired (keyword triggers plus an optional manual
+ * "advance the plot" event) and the updated story state.
+ */
+export function resolveStory(
+  db: HubDB,
+  userId: string,
+  convo: Conversation,
+  userText: string,
+  /** id of an event the user triggered manually (composer button) */
+  manualEventId?: string
+): { story: StoryContext | undefined; storyState: Conversation["storyState"] } {
+  if (convo.mode !== "story" || !convo.scenarioId) {
+    return { story: undefined, storyState: convo.storyState };
+  }
+  const scenario = db.getJson<Scenario>("scenarios", convo.scenarioId);
+  if (!scenario) return { story: undefined, storyState: convo.storyState };
+
+  const triggered = [...(convo.storyState?.triggeredEventIds ?? [])];
+  const newly: ScenarioEvent[] = [];
+
+  // manual "advance the plot" event: force-fire it this turn
+  if (manualEventId) {
+    const ev = scenario.events.find((x) => x.id === manualEventId);
+    if (ev) {
+      if (!triggered.includes(ev.id)) triggered.push(ev.id);
+      newly.push(ev);
+    }
+  }
+
+  // keyword triggers: comma-separated keywords matched against the message
+  for (const ev of scenario.events) {
+    if (triggered.includes(ev.id) || newly.some((n) => n.id === ev.id)) continue;
+    const keywords = ev.trigger
+      .split(/[,，]/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+    if (keywords.length && keywords.some((k) => userText.includes(k))) {
+      triggered.push(ev.id);
+      newly.push(ev);
+    }
+  }
+
+  const storyState = { openedAt: convo.storyState?.openedAt, triggeredEventIds: triggered };
+  return { story: { scenario, newlyTriggered: newly }, storyState };
+}
+
+// ----------------------------------------------------------------
 // Single-agent turn (1:1 conversation)
 // ----------------------------------------------------------------
 export async function runSingleTurn(
@@ -70,7 +130,9 @@ export async function runSingleTurn(
   replyTo: { id: string; role: string; content: string } | undefined,
   cb: TurnCallbacks,
   /** abort signal — lets the client actually cancel the upstream call */
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** story mode: event the user triggered manually */
+  storyEventId?: string
 ): Promise<{ userMsg: ChatMessage | null; assistantMsg: ChatMessage | null; error?: string }> {
   const trimmed = userText.trim();
   if (!trimmed && !images?.length) return { userMsg: null, assistantMsg: null };
@@ -120,7 +182,20 @@ export async function runSingleTurn(
     db.putJson("conversations", convo.id, userId, convo, { agent_id: convo.agentId, updated_at: convo.updatedAt });
   }
 
-  // 4. build context (memory retrieval happens inside buildContextMessages)
+  // 4. story mode: resolve the scenario and the events that just fired
+  let story: StoryContext | undefined;
+  if (convo.mode === "story" && convo.scenarioId) {
+    const resolved = resolveStory(db, userId, convo, trimmed, storyEventId);
+    story = resolved.story;
+    const before = convo.storyState?.triggeredEventIds?.length ?? 0;
+    if (resolved.storyState && resolved.storyState.triggeredEventIds.length !== before) {
+      convo = { ...convo, storyState: resolved.storyState };
+      db.putJson("conversations", convo.id, userId, convo, { agent_id: convo.agentId, updated_at: convo.updatedAt });
+      bus.emit(userId, { type: "conversation", conversation: convo });
+    }
+  }
+
+  // 5. build context (memory retrieval happens inside buildContextMessages)
   // the vision model gets the original data URLs (not the stored paths)
   const modelImages = images?.length ? images : undefined;
   const context = await buildContextMessages(
@@ -129,7 +204,8 @@ export async function runSingleTurn(
     listMessages(db, userId, convo.id).map((m) => (m.id === userMsg.id && modelImages ? { ...m, images: modelImages } : m)),
     e.settings,
     e.models,
-    e.providers
+    e.providers,
+    story
   );
   const assistantMsg: ChatMessage = {
     id: uid("msg"),

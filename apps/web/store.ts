@@ -65,11 +65,21 @@ async function sendRemoteTurn(
       set({ uploadingImages: true });
       payloadImages = await uploadImages(images);
     }
+    // story mode: hand the manually triggered event to the server
+    const storyEventId =
+      pendingStoryEvent.current?.convoId === convo.id ? pendingStoryEvent.current.eventId : undefined;
+    if (storyEventId) pendingStoryEvent.current = null;
     const res = await fetch(apiBase() + "/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ conversationId: convo.id, text: trimmed, images: payloadImages, replyTo }),
+      body: JSON.stringify({
+        conversationId: convo.id,
+        text: trimmed,
+        images: payloadImages,
+        replyTo,
+        storyEventId,
+      }),
     });
     if (res.status === 401) {
       window.dispatchEvent(new CustomEvent("myo:unauthorized"));
@@ -1426,6 +1436,12 @@ export const useStore = create<AppState>()(
         const done = new Set(convo.storyState?.triggeredEventIds ?? []);
         const next = scenario.events.find((e) => !done.has(e.id));
         if (!next) return null;
+        if (getDbMode() === "remote") {
+          // the server owns the story state — just remember the trigger
+          // and let it fire the event on the next turn
+          pendingStoryEvent.current = { convoId, eventId: next.id };
+          return next;
+        }
         const storyState = {
           openedAt: convo.storyState?.openedAt,
           triggeredEventIds: [...(convo.storyState?.triggeredEventIds ?? []), next.id],

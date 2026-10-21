@@ -1,24 +1,9 @@
+import { API, MOCK_API, login, api, seedBasics, promptLog, resetLog, chatPrompt } from "./fixtures.ts";
+
 // Realtime sync test: client A subscribes to /api/events, client B
 // sends a message — A must receive the event.
-const API = "http://127.0.0.1:8791";
 
-async function login() {
-  const res = await fetch(`${API}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username: "nightx", password: "test12345" }),
-  });
-  const cookie = (res.headers.get("set-cookie") || "").split(";")[0];
-  return { cookie, ok: res.ok };
-}
 
-async function api(cookie: string, path: string, init?: RequestInit) {
-  const res = await fetch(API + path, {
-    ...init,
-    headers: { "content-type": "application/json", cookie, ...(init?.headers ?? {}) },
-  });
-  return res.json();
-}
 
 async function main() {
   const a = await login();
@@ -50,6 +35,15 @@ async function main() {
       }
     } catch {}
   })();
+
+  // make sure the agent exists (fresh database)
+  await api(b.cookie, "/api/data/agents/ag1", {
+    method: "PUT",
+    body: JSON.stringify({
+      id: "ag1", name: "小樱", emoji: "🌸", hue: 330, persona: "你是小樱",
+      greeting: "你好", suggestions: [], memoryEnabled: true, models: {}, createdAt: 1, updatedAt: 1,
+    }),
+  });
 
   // B: create a conversation and send a message
   const convo = await api(b.cookie, "/api/conversations", {

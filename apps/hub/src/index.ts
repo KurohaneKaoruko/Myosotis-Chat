@@ -75,6 +75,20 @@ function currentUser(req: any): string | null {
   return session?.userId ?? null;
 }
 
+/**
+ * Fastify rejects an empty body when content-type says JSON. Clients
+ * often send DELETE without a body, so strip the content-type for
+ * bodyless verbs instead of failing the request.
+ */
+app.addHook("onRequest", async (req: any) => {
+  const len = req.headers["content-length"];
+  if (!len || len === "0") {
+    // no payload → don't claim it is JSON
+    delete req.headers["content-type"];
+    delete req.headers["content-length"];
+  }
+});
+
 app.addHook("preHandler", async (req: any, res: any) => {
   // public endpoints
   if (
@@ -191,7 +205,7 @@ app.post("/api/auth/password", async (req: any, res: any) => {
 // ----------------------------------------------------------------
 // data sync routes (providers/models/agents/convos/messages/memories…)
 // ----------------------------------------------------------------
-const TABLES = ["providers", "models", "agents", "prompts", "scenarios"] as const;
+const TABLES = ["providers", "models", "agents", "prompts", "scenarios", "memories"] as const;
 
 app.get("/api/data", async (req: any) => {
   bindUser(req.userId);
@@ -261,6 +275,7 @@ for (const t of TABLES) {
     const item = req.body as any;
     db.putJson(t, req.params.id, req.userId, item, extraColsFor(t, item));
     if (t === "agents") bus.emit(req.userId, { type: "agent", agent: item as Agent });
+    else if (t === "memories") bus.emit(req.userId, { type: "memory", memory: item as MemoryItem });
     else bus.emit(req.userId, { type: "settings" });
     return { ok: true };
   });
@@ -269,6 +284,8 @@ for (const t of TABLES) {
     if (t === "agents") {
       const agent = db.getJson<Agent>("agents", req.params.id);
       if (agent) bus.emit(req.userId, { type: "agent", agent, removed: true });
+    } else if (t === "memories") {
+      bus.emit(req.userId, { type: "memory", memory: { id: req.params.id } as MemoryItem });
     }
     bus.emit(req.userId, { type: "settings" });
     return { ok: true };
@@ -292,29 +309,12 @@ app.delete("/api/data/conversations/:id", async (req: any) => {
   return { ok: true };
 });
 
-// memories: upsert + delete (own table, indexed by agent)
-app.put("/api/memories/:id", async (req: any) => {
-  bindUser(req.userId);
-  const item = req.body as any;
-  db.putJson("memories", req.params.id, req.userId, item, {
-    agent_id: String(item.agentId ?? ""),
-    updated_at: item.updatedAt ?? Date.now(),
-  });
-  bus.emit(req.userId, { type: "memory", memory: item as MemoryItem });
-  return { ok: true };
-});
-
-app.delete("/api/memories/:id", async (req: any) => {
-  db.deleteJson("memories", req.params.id);
-  bus.emit(req.userId, { type: "memory", memory: { id: req.params.id } as MemoryItem });
-  return { ok: true };
-});
-
 function extraColsFor(t: string, item: any): Record<string, string | number> | undefined {
   if (t === "models") return { provider_id: String(item.providerId ?? "") };
   if (t === "providers") return { created_at: item.createdAt ?? now() };
   if (t === "agents") return { created_at: item.createdAt ?? now(), updated_at: item.updatedAt ?? now() };
   if (t === "scenarios") return { agent_id: String(item.agentId ?? ""), updated_at: item.updatedAt ?? now() };
+  if (t === "memories") return { agent_id: String(item.agentId ?? ""), updated_at: item.updatedAt ?? now() };
   return undefined;
 }
 
@@ -469,7 +469,7 @@ const activeStreams = new Set<AbortController>();
 const streamByConvo = new Map<string, AbortController>();
 
 app.post("/api/chat", async (req: any, res: any) => {
-  const { conversationId, text, images, replyTo } = req.body ?? {};
+  const { conversationId, text, images, replyTo, storyEventId } = req.body ?? {};
   const convo = db.getJson<Conversation>("conversations", conversationId);
   if (!convo) return res.status(404).send({ error: "no-convo" });
   const userId = req.userId;
@@ -551,7 +551,8 @@ app.post("/api/chat", async (req: any, res: any) => {
               return `${proto}://${host}${saved.url}`;
             },
           },
-          ac.signal
+          ac.signal,
+          storyEventId
         );
         if (result.error) send("error", { message: result.error });
       }

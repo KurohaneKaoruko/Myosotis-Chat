@@ -10,7 +10,7 @@
     "build": "tsc --noEmit",
     "start": "node --experimental-strip-types src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --no-warnings test/realtime.test.ts && node --experimental-strip-types --no-warnings test/delivery.test.ts && node --experimental-strip-types --no-warnings test/stop.test.ts && node --experimental-strip-types --no-warnings test/upload.test.ts"
+    "test": "node --experimental-strip-types --no-warnings test/run-all.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
