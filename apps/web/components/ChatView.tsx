@@ -339,13 +339,25 @@ export default function ChatView() {
               }
             }}
           />
-          <span className="search-count">
-            {q ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ""}
+          <span className={`search-count ${q && !matches.length ? "none" : ""}`}>
+            {q ? (matches.length ? `${matchIdx + 1}/${matches.length}` : t("searchNoResult")) : ""}
           </span>
-          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(-1)} title={t("searchPrev")}>
+          <button
+            className="icon-btn"
+            style={{ width: 28, height: 28 }}
+            onClick={() => gotoMatch(-1)}
+            title={t("searchPrev")}
+            disabled={!matches.length}
+          >
             <Icon name="back" size={14} />
           </button>
-          <button className="icon-btn" style={{ width: 28, height: 28 }} onClick={() => gotoMatch(1)} title={t("searchNext")}>
+          <button
+            className="icon-btn"
+            style={{ width: 28, height: 28 }}
+            onClick={() => gotoMatch(1)}
+            title={t("searchNext")}
+            disabled={!matches.length}
+          >
             <Icon name="down" size={14} />
           </button>
           <button
@@ -408,6 +420,7 @@ export default function ChatView() {
                     isLast={i === messages.length - 1}
                     showName={isGroup && m.role === "assistant" && !grouped}
                     grouped={grouped}
+                    highlight={q || undefined}
                     selectable={multiSelectActive}
                     selected={multiSelectIds.includes(m.id)}
                     onToggleSelect={() => toggleMultiSelect(m.id)}

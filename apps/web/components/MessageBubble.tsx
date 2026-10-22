@@ -33,6 +33,7 @@ export default function MessageBubble({
   showName,
   /** consecutive message from the same sender: hide the avatar row */
   grouped,
+  highlight,
 }: {
   msg: ChatMessage;
   agent: Agent;
@@ -45,6 +46,8 @@ export default function MessageBubble({
   showName?: boolean;
   /** chat-app style grouping: consecutive same-sender message */
   grouped?: boolean;
+  /** search term to highlight inside the bubble */
+  highlight?: string;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -104,6 +107,32 @@ export default function MessageBubble({
       </div>
     );
   }
+
+  /** wrap every occurrence of the search term in <mark> */
+  const renderHighlighted = (text: string) => {
+    if (!highlight?.trim()) return text;
+    const needle = highlight.trim();
+    const lower = text.toLowerCase();
+    const target = needle.toLowerCase();
+    const out: React.ReactNode[] = [];
+    let i = 0;
+    let key = 0;
+    for (;;) {
+      const at = lower.indexOf(target, i);
+      if (at < 0) {
+        out.push(text.slice(i));
+        break;
+      }
+      if (at > i) out.push(text.slice(i, at));
+      out.push(
+        <mark key={key++} className="search-mark">
+          {text.slice(at, at + needle.length)}
+        </mark>
+      );
+      i = at + needle.length;
+    }
+    return out;
+  };
 
   const copy = async () => {
     try {
@@ -289,11 +318,11 @@ export default function MessageBubble({
             </div>
           ) : isUser || streamingNow ? (
             <>
-              <span className="msg-text">{text}</span>
+              <span className="msg-text">{renderHighlighted(text)}</span>
               {streamingNow && <span className="type-caret" aria-hidden />}
             </>
           ) : (
-            <Markdown text={msg.content} />
+            <Markdown text={msg.content} highlight={highlight} />
           )}
         </div>
 

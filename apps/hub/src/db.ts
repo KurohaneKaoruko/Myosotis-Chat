@@ -4,7 +4,7 @@
 // ================================================================
 import { DatabaseSync } from "node:sqlite";
 import { setStorage, type StoragePort } from "@myosotis/core";
-import type { Conversation, MemoryItem } from "@myosotis/core";
+import type { ChatMessage, Conversation, MemoryItem } from "@myosotis/core";
 
 export interface HubUser {
   id: string;
@@ -213,6 +213,37 @@ export class HubDB {
       )
       .get(convoId, userId, lastReadAt) as any;
     return Number(row?.n ?? 0);
+  }
+
+  // ---------------- full-text search across messages ----------------
+  /**
+   * Search the user's whole message history.
+   * Returns the matching messages (newest first) plus the conversation
+   * they belong to, so the UI can show "message · chat" results.
+   */
+  searchMessages(
+    userId: string,
+    term: string,
+    limit = 50
+  ): Array<{ message: ChatMessage; conversationId: string; conversationTitle: string }> {
+    const like = `%${term.toLowerCase()}%`;
+    const rows = this.db
+      .prepare(
+        `SELECT data, conversation_id FROM messages
+         WHERE user_id = ? AND lower(json_extract(data, '$.content')) LIKE ?
+         ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(userId, like, limit) as any[];
+    const out: Array<{ message: ChatMessage; conversationId: string; conversationTitle: string }> = [];
+    for (const r of rows) {
+      const convo = this.getJson<Conversation>("conversations", r.conversation_id);
+      out.push({
+        message: JSON.parse(r.data) as ChatMessage,
+        conversationId: r.conversation_id,
+        conversationTitle: convo?.title ?? "",
+      });
+    }
+    return out;
   }
 
   // ---------------- channel bindings ----------------

@@ -1,6 +1,6 @@
 [package]
 name = "myosotis"
-version = "0.2.0"
+version = "0.3.0"
 description = "Myosotis - a companion-style AI chat app with a real memory system"
 license = "GPL-3.0-or-later"
 edition = "2021"

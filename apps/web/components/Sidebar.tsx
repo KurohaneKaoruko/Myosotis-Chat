@@ -5,6 +5,7 @@ import GroupEditor from "./GroupEditor";
 import { t, tf } from "../i18n";
 import { formatTime, plainPreview } from "@myosotis/core";
 import { allDrafts } from "../lib/drafts";
+import SearchResults from "./SearchResults";
 import type { Agent, Conversation } from "@myosotis/core";
 
 type Filter = "all" | "pinned" | "archived";
@@ -182,6 +183,11 @@ export default function Sidebar() {
           </button>
         ))}
       </div>
+
+      {/* global message search (server side) */}
+      {search.trim().length > 0 && (
+        <SearchResults query={search} onClose={() => setSearch("")} />
+      )}
 
       <div className="convo-scroll">
         {agents.length === 0 && (

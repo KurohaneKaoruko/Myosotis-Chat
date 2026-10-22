@@ -577,6 +577,10 @@ const zhCN = {
   sending: "发送中",
   resendFailed: "发送失败，点击重试",
   uploading: "正在上传图片…",
+  searchNoResult: "无结果",
+  searching: "搜索中…",
+  searchUnavailable: "无法搜索",
+  searchFound: "找到 {n} 条",
 };
 
 export default zhCN;

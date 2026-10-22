@@ -16,6 +16,8 @@ const SUITES = [
   "upload",
   "memory",
   "story",
+  "group",
+  "search",
 ];
 
 function run(suite: string): Promise<{ code: number; out: string }> {

@@ -398,6 +398,25 @@ app.delete("/api/conversations/:id/messages/:mid", async (req: any) => {
   return { ok: true };
 });
 
+// ---- global message search ----
+app.get("/api/search", async (req: any, res: any) => {
+  bindUser(req.userId);
+  const q = String((req.query as any)?.q ?? "").trim();
+  if (q.length < 1) return [];
+  const results = db.searchMessages(req.userId, q, Math.min(100, Number((req.query as any)?.limit ?? 50)));
+  // group by conversation, newest first
+  const byConvo = new Map<string, { conversationId: string; conversationTitle: string; hits: ChatMessage[] }>();
+  for (const r of results) {
+    let entry = byConvo.get(r.conversationId);
+    if (!entry) {
+      entry = { conversationId: r.conversationId, conversationTitle: r.conversationTitle, hits: [] };
+      byConvo.set(r.conversationId, entry);
+    }
+    entry.hits.push(r.message);
+  }
+  return { query: q, results: [...byConvo.values()] };
+});
+
 // ---- memories ----
 app.get("/api/memories", async (req: any) => {
   bindUser(req.userId);

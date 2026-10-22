@@ -83,7 +83,7 @@ function render(text: string, withMath: boolean): string {
   }
 }
 
-export default function Markdown({ text }: { text: string }) {
+export default function Markdown({ text, highlight }: { text: string; highlight?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const needsMath = useMemo(() => looksLikeMath(text), [text]);
   const [mathReady, setMathReady] = useState(!!katexInstance);
@@ -95,6 +95,49 @@ export default function Markdown({ text }: { text: string }) {
   }, [needsMath]);
 
   const html = useMemo(() => render(text, needsMath && mathReady), [text, needsMath, mathReady]);
+
+  // highlight the search term in the rendered text (skipping code blocks)
+  useEffect(() => {
+    const root = ref.current;
+    const needle = highlight?.trim();
+    if (!root || !needle) return;
+    const lower = needle.toLowerCase();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (parent.closest("code, pre, mark, script, style")) return NodeFilter.FILTER_REJECT;
+        return node.textContent?.toLowerCase().includes(lower)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const targets: Text[] = [];
+    let n = walker.nextNode();
+    while (n) {
+      targets.push(n as Text);
+      n = walker.nextNode();
+    }
+    for (const node of targets) {
+      const text = node.textContent ?? "";
+      const frag = document.createDocumentFragment();
+      let i = 0;
+      for (;;) {
+        const at = text.toLowerCase().indexOf(lower, i);
+        if (at < 0) {
+          if (i < text.length) frag.appendChild(document.createTextNode(text.slice(i)));
+          break;
+        }
+        if (at > i) frag.appendChild(document.createTextNode(text.slice(i, at)));
+        const mark = document.createElement("mark");
+        mark.className = "search-mark";
+        mark.textContent = text.slice(at, at + needle.length);
+        frag.appendChild(mark);
+        i = at + needle.length;
+      }
+      node.parentNode?.replaceChild(frag, node);
+    }
+  }, [html, highlight]);
 
   useEffect(() => {
     const root = ref.current;

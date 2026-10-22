@@ -559,6 +559,10 @@ const en: Partial<Dict> = {
   sending: "Sending",
   resendFailed: "Failed to send, tap to retry",
   uploading: "Uploading image…",
+  searchNoResult: "No results",
+  searching: "Searching…",
+  searchUnavailable: "Search unavailable",
+  searchFound: "{n} found",
 };
 
 export default en;
