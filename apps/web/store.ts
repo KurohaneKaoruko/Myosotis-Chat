@@ -7,7 +7,7 @@ import { connectLive, disconnectLive, clearUnread } from "./lib/live";
 import { uploadImages } from "./lib/uploads";
 import { mergeAgentConversations } from "./lib/migrate";
 import { chatComplete, embedText } from "@myosotis/core";
-import { buildContextMessages, extractMemories, maybeSummarize, generateTitle, retrieveMemories } from "@myosotis/core";
+import { buildContextMessages, extractMemories, maybeSummarize, generateTitle, retrieveMemories, MEMORY_EXTRACT_EVERY } from "@myosotis/core";
 import { buildGroupContext, replyingParticipants, visibleAgentIds } from "@myosotis/core";
 import { uid, now, resolveModel, resolveGenParams, friendlyError, plainPreview } from "@myosotis/core";
 import {
@@ -213,6 +213,12 @@ interface AppState {
   /** true while images are being uploaded to the hub */
   uploadingImages: boolean;
   memoryAgentFilter: string | null;
+  /**
+   * bumped whenever memories change (local edit or live "memory"
+   * event) so plain-React views (MemoryView) can re-read the
+   * remote-mode cache, which useLiveQuery cannot observe
+   */
+  memoryRev: number;
   confirmOptions: { title: string; message: string; confirmText?: string; danger?: boolean } | null;
   replyTo: { role: "user" | "assistant"; content: string } | null;
   pendingImages: string[];
@@ -338,6 +344,7 @@ export const useStore = create<AppState>()(
       streamText: "",
       uploadingImages: false,
       memoryAgentFilter: null,
+      memoryRev: 0,
       confirmOptions: null,
       replyTo: null,
       pendingImages: [],
@@ -713,7 +720,10 @@ export const useStore = create<AppState>()(
       },
       async deleteConversation(id) {
         if (getDbMode() === "remote") {
-          await fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+          await fetch(apiBase() + `/api/conversations/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            credentials: "include",
+          }).catch(() => {});
           remoteDB.conversations.cache.delete(id);
           for (const [mid, m] of remoteDB.messages.cache) if (m.conversationId === id) remoteDB.messages.cache.delete(mid);
         } else {
@@ -1210,13 +1220,13 @@ export const useStore = create<AppState>()(
             )
             .catch(() => {});
         }
-        if (agent.memoryEnabled && currentConvo.mode !== "story" && extractCounter[convo.id] >= 3) {
+        if (agent.memoryEnabled && currentConvo.mode !== "story" && extractCounter[convo.id] >= MEMORY_EXTRACT_EVERY) {
           extractCounter[convo.id] = 0;
           const embeddingRm = resolveModel("embedding", models, providers, settings, agent.models);
           const recent = [...allMsgs, userMsg, aiMsg].slice(-14);
           extractMemories(agent, recent, chatRmForJobs, embeddingRm)
-            .then((n) => {
-              if (n > 0) get().showToast(tf("rememberedN", { n }), "success");
+            .then((added) => {
+              if (added.length > 0) get().showToast(tf("rememberedN", { n: added.length }), "success");
             })
             .catch(() => {});
         }
@@ -1349,12 +1359,15 @@ export const useStore = create<AppState>()(
           updatedAt: now(),
         };
         await db.memories.add(item);
+        set((st) => ({ memoryRev: st.memoryRev + 1 }));
       },
       async updateMemory(id, patch) {
         await db.memories.update(id, { ...patch, updatedAt: now() });
+        set((st) => ({ memoryRev: st.memoryRev + 1 }));
       },
       async deleteMemory(id) {
         await db.memories.delete(id);
+        set((st) => ({ memoryRev: st.memoryRev + 1 }));
       },
 
       // -------------------------------------------------------

@@ -19,12 +19,17 @@ import {
   messageVisibleTo,
   groupHistory,
   buildGroupContext,
+  buildSystemPrompt,
+  extractMemories,
+  MEMORY_EXTRACT_EVERY,
   providerKeyPool,
   pickProviderKey,
+  setStorage,
   type Agent,
   type ChatMessage,
   type Conversation,
   type GroupParticipant,
+  type MemoryItem,
   type ModelConfig,
   type Provider,
   type Settings,
@@ -90,6 +95,22 @@ function convo(partial: Partial<Conversation> = {}): Conversation {
 }
 function msg(partial: Partial<ChatMessage>): ChatMessage {
   return { id: "m", conversationId: "cnv1", role: "user", content: "hi", createdAt: 1, ...partial } as ChatMessage;
+}
+let memSeq = 0;
+function memItem(content: string, importance = 3): MemoryItem {
+  memSeq++;
+  return {
+    id: `mem_${memSeq}`,
+    agentId: "a",
+    content,
+    kind: "fact",
+    importance,
+    embedding: null,
+    pinned: false,
+    hitCount: 0,
+    createdAt: memSeq,
+    updatedAt: memSeq,
+  };
 }
 
 console.log("== utils ==");
@@ -213,6 +234,58 @@ const ctx = buildGroupContext(ag1, convo({ kind: "group", participants: all, tit
 eq("context starts with system", ctx[0]?.role, "system");
 ok("group framing mentions the chat title", ctx[0]?.text.includes("圆桌"));
 ok("group framing names the other agent", ctx[0]?.text.includes("知夏"));
+
+console.log("== memory extraction (in-memory storage port) ==");
+
+// in-memory storage port so extractMemories can run without a host
+const memStore = new Map<string, MemoryItem>();
+setStorage({
+  listMemories: async (agentId?: string) =>
+    [...memStore.values()].filter((m) => !agentId || m.agentId === agentId),
+  saveMemory: async (item) => void memStore.set(item.id, item),
+  touchMemories: async () => {},
+  getConversation: async () => undefined,
+  saveConversation: async () => {},
+});
+
+ok("MEMORY_EXTRACT_EVERY is 3", MEMORY_EXTRACT_EVERY === 3);
+
+const fakeRm = { model: model("m-x", "p1", ["chat"]), provider: provider("p1") };
+
+// empty transcript → no memories, no network
+eq("empty transcript → no memories",
+  await extractMemories(ag1 as Agent, [], fakeRm, null), []);
+
+ok("story mode keeps memories out of the system prompt",
+  !(await (async () => {
+    const sys = buildSystemPrompt(
+      agent("a", "x") as Agent,
+      convo({ mode: "story" }) as Conversation,
+      DEFAULT_SETTINGS,
+      [memItem("故事里捡到魔法石")],
+      { scenario: { id: "sc", agentId: "a", name: "异世界", worldSetting: "魔法大陆", openingStory: "你在森林里醒来", events: [], plotPrompts: [], createdAt: 1, updatedAt: 1 }, newlyTriggered: [] }
+    );
+    return sys.includes("长期记忆");
+  })()));
+
+ok("normal mode injects memories into the system prompt",
+  (() => {
+    const sys = buildSystemPrompt(
+      agent("a", "x") as Agent,
+      convo({}) as Conversation,
+      DEFAULT_SETTINGS,
+      [memItem("用户喜欢深夜写代码")]
+    );
+    return sys.includes("长期记忆") && sys.includes("用户喜欢深夜写代码");
+  })());
+
+ok("memories capped at 12 in the prompt",
+  (() => {
+    const many = Array.from({ length: 30 }, (_, i) => memItem(`记忆${String(i).padStart(2, "0")}`, 3 - (i % 3)));
+    const sys = buildSystemPrompt(agent("a", "x") as Agent, convo({}) as Conversation, DEFAULT_SETTINGS, many);
+    const injected = many.filter((m) => sys.includes(m.content));
+    return injected.length === 12;
+  })());
 
 console.log(`\nPASS=${pass} FAIL=${fail}`);
 // the suite is plain node — exit code is how the runner sees failures

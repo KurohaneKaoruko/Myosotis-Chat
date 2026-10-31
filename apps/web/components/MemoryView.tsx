@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useStore } from "../store";
-import { db } from "../lib/db";
+import { db, getDbMode } from "../lib/db";
 import { MEMORY_KINDS, type MemoryItem, type MemoryKind } from "@myosotis/core";
 import { Modal, Icon, SelectBox } from "./ui";
 import { t, tf } from "../i18n";
@@ -41,9 +41,26 @@ export default function MemoryView() {
 
   const all = useLiveQuery(() => db.memories.toArray(), []) ?? [];
 
+  // remote mode: memories live in a plain in-memory cache, which
+  // useLiveQuery cannot observe — re-read when the store's memories
+  // rev (bumped by live "memory" events and local edits)
+  const memoryRev = useStore((s) => s.memoryRev);
+  const [remoteList, setRemoteList] = useState<MemoryItem[]>([]);
+  useEffect(() => {
+    if (getDbMode() !== "remote") return;
+    let cancelled = false;
+    db.memories.toArray().then((items) => {
+      if (!cancelled) setRemoteList(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [memoryRev]);
+  const source = getDbMode() === "remote" ? remoteList : all;
+
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let items = all;
+    let items = source;
     if (!cleanupMode) {
       if (query.trim()) items = items.filter((m) => m.content.toLowerCase().includes(q));
       if (kindFilter !== "all") items = items.filter((m) => m.kind === kindFilter);
@@ -57,7 +74,7 @@ export default function MemoryView() {
     return [...items].sort(
       (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt
     );
-  }, [all, query, kindFilter, minImportance, cleanupMode]);
+  }, [source, query, kindFilter, minImportance, cleanupMode]);
 
   const agentOf = (id: string) => agents.find((a) => a.id === id);
   const kindInfo = (k: MemoryKind) => MEMORY_KINDS.find((x) => x.id === k) ?? MEMORY_KINDS[0];
@@ -69,7 +86,7 @@ export default function MemoryView() {
   };
 
   const exportMemories = async () => {
-    const items = filter === "all" ? all : all.filter((m) => m.agentId === filter);
+    const items = filter === "all" ? source : source.filter((m) => m.agentId === filter);
     if (!items.length) {
       showToast(t("nothingToExport"), "error");
       return;

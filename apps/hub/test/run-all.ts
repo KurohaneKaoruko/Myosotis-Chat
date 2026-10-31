@@ -25,6 +25,7 @@ const SUITES = [
   "story",
   "group",
   "search",
+  "isolation",
 ];
 
 const API = process.env.HUB_API ?? "";
@@ -54,6 +55,9 @@ function run(suite: string): Promise<{ code: number; out: string }> {
           ...process.env,
           HUB_API: API || process.env.HUB_API || "http://127.0.0.1:8791",
           MOCK_API: MOCK_API || process.env.MOCK_API || "http://127.0.0.1:9911",
+          // suites (isolation) may need to insert extra test users into
+          // the throwaway database
+          MYO_DATA_DIR: managedDataDir ?? process.env.MYO_DATA_DIR,
         },
       }
     );
@@ -139,6 +143,8 @@ for (const suite of SUITES) {
     failed++;
     console.log(out.split("\n").filter((l) => l.includes("❌") || l.includes("Error")).join("\n"));
   }
+  // a suite that ran zero assertions is suspicious (crashed early?) — show why
+  if (pass === 0) console.log(out.trim());
 }
 console.log(failed === 0 ? "\nAll suites green." : `\n${failed} suite(s) failed.`);
 stopManaged();

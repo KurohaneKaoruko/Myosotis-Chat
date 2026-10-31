@@ -73,23 +73,39 @@ export function connectLive() {
   es.addEventListener("clear-conversation", (e) => {
     const data = JSON.parse((e as MessageEvent).data);
     const store = useStore.getState();
-    if (store.activeConvoId === data.conversationId) {
-      useStore.setState({ messages: [] });
-    }
+    // this event fires for both "messages cleared" and "conversation
+    // deleted" (both purge the messages server-side); the conversation
+    // is gone from the server either way, so drop it from the list
+    void import("./db").then(({ remoteDB }) => {
+      remoteDB.conversations.cache.delete(data.conversationId);
+      for (const [mid, m] of remoteDB.messages.cache) {
+        if (m.conversationId === data.conversationId) remoteDB.messages.cache.delete(mid);
+      }
+    });
+    useStore.setState({
+      convos: store.convos.filter((c) => c.id !== data.conversationId),
+      messages: store.activeConvoId === data.conversationId ? [] : store.messages,
+      activeConvoId:
+        store.activeConvoId === data.conversationId
+          ? store.convos.find((c) => c.id !== data.conversationId)?.id ?? null
+          : store.activeConvoId,
+    });
   });
 
   es.addEventListener("memory", (e) => {
     const data = JSON.parse((e as MessageEvent).data);
-    const store = useStore.getState();
     const m = data.memory;
     if (!m?.id) return;
-    if (m.content === undefined) {
-      // deletion marker
-      useStore.setState({});
-      return;
-    }
     void import("./db").then(({ remoteDB }) => {
-      remoteDB.memories.cache.set(m.id, m);
+      if (m.content === undefined) {
+        // deletion marker: only the id is set
+        remoteDB.memories.cache.delete(m.id);
+      } else {
+        remoteDB.memories.cache.set(m.id, m);
+      }
+      // MemoryView re-reads the cache whenever this bumps
+      const { memoryRev } = useStore.getState();
+      useStore.setState({ memoryRev: memoryRev + 1 });
     });
   });
 

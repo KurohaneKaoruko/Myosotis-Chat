@@ -286,16 +286,27 @@ importance 为 1-5：5 = 对理解用户极重要（核心身份、重大事件�
 对话内容：
 `;
 
+/**
+ * Run memory extraction every N user turns — mirrors the web app's
+ * counter so both hosts agree on the cadence (and tests can rely on it).
+ */
+export const MEMORY_EXTRACT_EVERY = 3;
+
+/**
+ * Mine new long-term memories from a recent transcript.
+ * Returns the memories that were actually saved (may be empty) so the
+ * host can broadcast them to other devices.
+ */
 export async function extractMemories(
   agent: Agent,
   msgs: ChatMessage[],
   chatRm: { model: ModelConfig; provider: Provider },
   embeddingRm: { model: ModelConfig; provider: Provider } | null
-): Promise<number> {
+): Promise<MemoryItem[]> {
   const transcript = msgs
     .map((m) => `${m.role === "user" ? "用户" : "AI"}: ${m.content.slice(0, 400)}`)
     .join("\n");
-  if (!transcript.trim()) return 0;
+  if (!transcript.trim()) return [];
 
   let raw = "";
   try {
@@ -304,14 +315,14 @@ export async function extractMemories(
       maxTokens: 1000,
     });
   } catch {
-    return 0;
+    return [];
   }
 
   const parsed = parseJsonArray(raw);
-  if (!parsed.length) return 0;
+  const added: MemoryItem[] = [];
+  if (!parsed.length) return added;
 
   const existing = (await storage().listMemories(agent.id)).filter((m) => m.agentId === agent.id);
-  let added = 0;
 
   for (const item of parsed) {
     const content = String(item.content ?? "").trim();
@@ -333,7 +344,9 @@ export async function extractMemories(
     const dup = findDuplicate(content, embedding, existing);
     if (dup) {
       if (importance > dup.importance) {
-        await storage().saveMemory({ ...dup, importance, updatedAt: now() });
+        const promoted = { ...dup, importance, updatedAt: now() };
+        await storage().saveMemory(promoted);
+        added.push(promoted);
       }
       continue;
     }
@@ -351,7 +364,7 @@ export async function extractMemories(
     };
     existing.push(entry);
     await storage().saveMemory(entry);
-    added++;
+    added.push(entry);
   }
   return added;
 }

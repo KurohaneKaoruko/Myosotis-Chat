@@ -242,7 +242,7 @@ app.post("/api/conversations/:id/read", async (req: any, res: any) => {
   // clients may POST with an empty body → don't let fastify reject it
   if (req.body === undefined) req.body = {};
   const convo = db.getJson<Conversation>("conversations", req.params.id);
-  if (!convo) return res.status(404).send({ error: "not-found" });
+  if (!convo || !db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   const updated = { ...convo, lastReadAt: now() };
   db.putJson("conversations", convo.id, req.userId, updated, { agent_id: convo.agentId, updated_at: convo.updatedAt });
   bus.emit(req.userId, { type: "conversation", conversation: updated });
@@ -253,6 +253,8 @@ app.put("/api/data/settings", async (req: any) => {
   const existing = db.getJson<Settings>("settings", req.userId);
   const merged = deepMergeSettings(existing ?? DEFAULT_SETTINGS, req.body);
   db.putJson("settings", req.userId, req.userId, merged);
+  // theme/language/params changed on this device → every other device pulls it
+  bus.emit(req.userId, { type: "settings" });
   return { ok: true };
 });
 
@@ -270,16 +272,23 @@ function deepMergeSettings(base: Settings, patch: any): Settings {
 }
 
 for (const t of TABLES) {
-  app.put(`/api/data/${t}/:id`, async (req: any) => {
+  app.put(`/api/data/${t}/:id`, async (req: any, res: any) => {
     bindUser(req.userId);
     const item = req.body as any;
+    if (item?.id && item.id !== req.params.id) return res.status(400).send({ error: "id-mismatch" });
+    // ownership guard: refuse to overwrite another user's row
+    if (db.getJson(t, req.params.id) !== undefined && !db.ownsRow(req.userId, t, req.params.id)) {
+      return res.status(404).send({ error: "not-found" });
+    }
     db.putJson(t, req.params.id, req.userId, item, extraColsFor(t, item));
     if (t === "agents") bus.emit(req.userId, { type: "agent", agent: item as Agent });
     else if (t === "memories") bus.emit(req.userId, { type: "memory", memory: item as MemoryItem });
     else bus.emit(req.userId, { type: "settings" });
     return { ok: true };
   });
-  app.delete(`/api/data/${t}/:id`, async (req: any) => {
+  app.delete(`/api/data/${t}/:id`, async (req: any, res: any) => {
+    // ownership guard: deleting is scoped to the signed-in user's own rows
+    if (!db.ownsRow(req.userId, t, req.params.id)) return res.status(404).send({ error: "not-found" });
     // read before delete: the removal broadcast carries the full entity
     const removed =
       t === "agents" ? db.getJson<Agent>(t, req.params.id) : undefined;
@@ -299,15 +308,23 @@ app.put("/api/data/conversations/:id", async (req: any, res: any) => {
   bindUser(req.userId);
   const item = req.body as any;
   if (!item?.id) return res.status(400).send({ error: "bad-conversation" });
+  if (db.getJson("conversations", req.params.id) !== undefined && !db.ownsRow(req.userId, "conversations", req.params.id)) {
+    return res.status(404).send({ error: "not-found" });
+  }
   db.putJson("conversations", req.params.id, req.userId, item, {
     agent_id: String(item.agentId ?? ""),
     updated_at: item.updatedAt ?? Date.now(),
   });
+  // archive/tags/rename made on one device must reach the others
+  bus.emit(req.userId, { type: "conversation", conversation: item as Conversation });
   return { ok: true };
 });
 
-app.delete("/api/data/conversations/:id", async (req: any) => {
+app.delete("/api/data/conversations/:id", async (req: any, res: any) => {
+  if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
+  db.raw.prepare("DELETE FROM messages WHERE conversation_id = ?").run(req.params.id);
   db.deleteJson("conversations", req.params.id);
+  bus.emit(req.userId, { type: "clear-conversation", conversationId: req.params.id });
   return { ok: true };
 });
 
@@ -346,7 +363,7 @@ app.post("/api/conversations", async (req: any, res: any) => {
 app.put("/api/conversations/:id", async (req: any, res: any) => {
   bindUser(req.userId);
   const existing = db.getJson<Conversation>("conversations", req.params.id);
-  if (!existing) return res.status(404).send({ error: "not-found" });
+  if (!existing || !db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   const merged = { ...existing, ...req.body, id: req.params.id } as Conversation;
   db.putJson("conversations", req.params.id, req.userId, merged, { agent_id: existing.agentId, updated_at: now() });
   bus.emit(req.userId, { type: "conversation", conversation: merged });
@@ -356,7 +373,7 @@ app.put("/api/conversations/:id", async (req: any, res: any) => {
 app.delete("/api/conversations/:id", async (req: any, res: any) => {
   bindUser(req.userId);
   const convo = db.getJson<Conversation>("conversations", req.params.id);
-  if (!convo) return res.status(404).send({ error: "not-found" });
+  if (!convo || !db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   db.raw.prepare("DELETE FROM messages WHERE conversation_id = ?").run(req.params.id);
   db.deleteJson("conversations", req.params.id);
   bus.emit(req.userId, { type: "clear-conversation", conversationId: req.params.id });
@@ -365,15 +382,16 @@ app.delete("/api/conversations/:id", async (req: any, res: any) => {
 
 app.get("/api/conversations/:id/messages", async (req: any, res: any) => {
   bindUser(req.userId);
-  const convo = db.getJson<Conversation>("conversations", req.params.id);
-  if (!convo) return res.status(404).send({ error: "not-found" });
+  if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   return listMessages(db, req.userId, req.params.id);
 });
 
 app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
   bindUser(req.userId);
-  const existing = db.getJson<ChatMessage>("messages", req.params.mid);
-  if (!existing) return res.status(404).send({ error: "not-found" });
+  if (!db.ownsRow(req.userId, "conversations", req.params.id) || !db.ownsRow(req.userId, "messages", req.params.mid)) {
+    return res.status(404).send({ error: "not-found" });
+  }
+  const existing = db.getJson<ChatMessage>("messages", req.params.mid)!;
   const merged = { ...existing, ...req.body, id: req.params.mid } as ChatMessage;
   db.putJson("messages", req.params.mid, req.userId, merged, { conversation_id: req.params.id, created_at: existing.createdAt });
   bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: merged });
@@ -383,8 +401,7 @@ app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
 // client-created messages (greetings, edits) — upsert
 app.post("/api/conversations/:id/messages", async (req: any, res: any) => {
   bindUser(req.userId);
-  const convo = db.getJson<Conversation>("conversations", req.params.id);
-  if (!convo) return res.status(404).send({ error: "no-convo" });
+  if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "no-convo" });
   const m = req.body as ChatMessage;
   if (!m?.id || typeof m.content !== "string") return res.status(400).send({ error: "bad-message" });
   db.putJson("messages", m.id, req.userId, m, { conversation_id: req.params.id, created_at: m.createdAt ?? now() });
@@ -394,7 +411,8 @@ app.post("/api/conversations/:id/messages", async (req: any, res: any) => {
 
 function remoteDBcacheSync(_m: ChatMessage) {} // placeholder; cache lives client-side
 
-app.delete("/api/conversations/:id/messages/:mid", async (req: any) => {
+app.delete("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
+  if (!db.ownsRow(req.userId, "messages", req.params.mid)) return res.status(404).send({ error: "not-found" });
   db.deleteJson("messages", req.params.mid);
   bus.emit(req.userId, { type: "delete-message", conversationId: req.params.id, messageId: req.params.mid });
   return { ok: true };
@@ -404,7 +422,8 @@ app.delete("/api/conversations/:id/messages/:mid", async (req: any) => {
 app.get("/api/search", async (req: any, res: any) => {
   bindUser(req.userId);
   const q = String((req.query as any)?.q ?? "").trim();
-  if (q.length < 1) return [];
+  // keep the response shape stable: {query, results} even for empty queries
+  if (q.length < 1) return { query: q, results: [] };
   const results = db.searchMessages(req.userId, q, Math.min(100, Number((req.query as any)?.limit ?? 50)));
   // group by conversation, newest first
   const byConvo = new Map<string, { conversationId: string; conversationTitle: string; hits: ChatMessage[] }>();
@@ -477,6 +496,8 @@ app.get("/api/events", async (req: any, res: any) => {
 // chat turn — SSE stream
 // ----------------------------------------------------------------
 function loadEntities(userId: string, agentId: string) {
+  // agents are user-scoped: never load another account's agent
+  if (!db.ownsRow(userId, "agents", agentId)) return null;
   const agent = db.getJson<Agent>("agents", agentId);
   if (!agent) return null;
   const settings = deepMergeSettings(DEFAULT_SETTINGS, db.getJson<Settings>("settings", userId) ?? {});
@@ -492,7 +513,7 @@ const streamByConvo = new Map<string, AbortController>();
 app.post("/api/chat", async (req: any, res: any) => {
   const { conversationId, text, images, replyTo, storyEventId } = req.body ?? {};
   const convo = db.getJson<Conversation>("conversations", conversationId);
-  if (!convo) return res.status(404).send({ error: "no-convo" });
+  if (!convo || !db.ownsRow(req.userId, "conversations", conversationId)) return res.status(404).send({ error: "no-convo" });
   const userId = req.userId;
   bindUser(userId);
 
@@ -611,11 +632,16 @@ app.get("/api/channels", async (req: any) => {
 app.put("/api/channels/onebot", async (req: any, res: any) => {
   const { platformUserId, agentId } = req.body ?? {};
   if (!platformUserId?.trim() || !agentId) return res.status(400).send({ error: "missing-fields" });
+  // the bound agent must belong to the caller
+  if (!db.ownsRow(req.userId, "agents", String(agentId))) return res.status(404).send({ error: "no-agent" });
   db.putBinding("onebot", String(platformUserId).trim(), req.userId, String(agentId));
   return { ok: true };
 });
 
-app.delete("/api/channels/onebot/:key", async (req: any) => {
+app.delete("/api/channels/onebot/:key", async (req: any, res: any) => {
+  const binding = db.getBinding("onebot", req.params.key);
+  // you can only remove your own bindings
+  if (binding && binding.userId !== req.userId) return res.status(404).send({ error: "not-found" });
   db.deleteBinding("onebot", req.params.key);
   return { ok: true };
 });

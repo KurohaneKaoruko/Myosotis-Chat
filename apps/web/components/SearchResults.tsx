@@ -48,7 +48,7 @@ export default function SearchResults({
     setFailed(false);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`${apiBase()}/api/search?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`${apiBase()}/api/search?q=${encodeURIComponent(q)}`, { credentials: "include" });
         if (!res.ok) throw new Error(`http ${res.status}`);
         const data = await res.json();
         if (!cancelled) setGroups(data.results ?? []);

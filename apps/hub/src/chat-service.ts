@@ -12,6 +12,7 @@ import {
   maybeSummarize,
   replyingParticipants,
   retrieveMemories,
+  MEMORY_EXTRACT_EVERY,
   chatComplete,
   embedText,
   uid,
@@ -30,6 +31,9 @@ import {
 } from "@myosotis/core";
 import type { HubDB } from "./db.ts";
 import { bus } from "./events.ts";
+
+/** conversationId → user turns since the last memory extraction */
+const turnCounters = new Map<string, number>();
 
 export interface TurnCallbacks {
   /** the user's message was persisted — echo it back immediately */
@@ -256,10 +260,19 @@ export async function runSingleTurn(
       })
       .catch(() => {});
   }
-  if (e.agent.memoryEnabled !== false) {
+  // story mode: never extract — fiction must not bleed into real long-term
+  // memory (mirrors the web app's rule)
+  const turnCounter = (turnCounters.get(convo.id) ?? 0) + 1;
+  turnCounters.set(convo.id, turnCounter);
+  if (e.agent.memoryEnabled !== false && convo.mode !== "story" && turnCounter % MEMORY_EXTRACT_EVERY === 0) {
     const recent = listMessages(db, userId, convo.id).slice(-6);
     const embRm = resolveModel("embedding", e.models, e.providers, e.settings, e.agent.models);
-    extractMemories(e.agent as any, recent, rm as any, embRm).catch(() => {});
+    extractMemories(e.agent as any, recent, rm as any, embRm)
+      .then((added) => {
+        // let every other device see the auto-extracted memories
+        for (const m of added) bus.emit(userId, { type: "memory", memory: m });
+      })
+      .catch(() => {});
   }
 
   return { userMsg, assistantMsg, error: assistantMsg.status === "error" ? assistantMsg.content : undefined };
@@ -354,5 +367,25 @@ export async function runGroupTurn(
     bus.emit(userId, { type: "message", conversationId: e.convo.id, message: assistantMsg });
     bus.emit(userId, { type: "conversation", conversation: after });
     cb.onMessage?.(assistantMsg);
+  }
+
+  // memory extraction after the whole round table (every N user turns).
+  // Group convos have no story mode, so no exclusion needed here.
+  const turnCounter = (turnCounters.get(e.convo.id) ?? 0) + 1;
+  turnCounters.set(e.convo.id, turnCounter);
+  if (turnCounter % MEMORY_EXTRACT_EVERY === 0) {
+    for (const p of replyOrder) {
+      const agent = e.agents.find((a) => a.id === p.agentId);
+      if (!agent || agent.memoryEnabled === false) continue;
+      const rm = resolveModel("chat", e.models, e.providers, e.settings, agent.models);
+      if (!rm) continue;
+      const recent = listMessages(db, userId, e.convo.id).slice(-6);
+      const embRm = resolveModel("embedding", e.models, e.providers, e.settings, agent.models);
+      extractMemories(agent as any, recent, rm, embRm)
+        .then((added) => {
+          for (const m of added) bus.emit(userId, { type: "memory", memory: m });
+        })
+        .catch(() => {});
+    }
   }
 }

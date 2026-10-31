@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./ui";
 import { t, tf } from "../i18n";
 import { useStore } from "../store";
-import { getDbMode } from "../lib/db";
+import { getDbMode, apiBase } from "../lib/db";
 import { toast } from "sonner";
 
 // ================================================================
@@ -28,7 +28,7 @@ export default function ConnectionsCard() {
 
   const load = async () => {
     try {
-      const res = await fetch("/api/channels");
+      const res = await fetch(apiBase() + "/api/channels", { credentials: "include" });
       const data = await res.json();
       setBindings(data.bindings ?? []);
       setStatus(data.onebot ?? null);
@@ -47,8 +47,9 @@ export default function ConnectionsCard() {
     if (!peer.trim() || !agentId) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/channels/onebot", {
+      const res = await fetch(apiBase() + "/api/channels/onebot", {
         method: "PUT",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ platformUserId: peer.trim(), agentId }),
       });
@@ -63,7 +64,10 @@ export default function ConnectionsCard() {
   };
 
   const removeBinding = async (key: string) => {
-    await fetch(`/api/channels/onebot/${encodeURIComponent(key)}`, { method: "DELETE" });
+    await fetch(apiBase() + `/api/channels/onebot/${encodeURIComponent(key)}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
     await load();
   };
 

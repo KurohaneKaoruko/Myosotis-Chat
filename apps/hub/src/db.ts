@@ -193,6 +193,17 @@ export class HubDB {
     return rows.map((r) => JSON.parse(r.data) as T);
   }
 
+  /**
+   * Multi-tenant guard: does this row exist AND belong to the user?
+   * False for missing rows, so callers can answer 404 uniformly without
+   * leaking the existence of another account's data.
+   */
+  ownsRow(userId: string, table: string, id: string): boolean {
+    const t = this.table(table);
+    const row = this.db.prepare(`SELECT user_id FROM ${t} WHERE id = ?`).get(id) as any;
+    return !!row && row.user_id === userId;
+  }
+
 
   // ---------------- memories (typed helpers for the core port) -----
   listMemoriesForUser(userId: string): MemoryItem[] {

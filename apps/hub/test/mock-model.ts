@@ -87,21 +87,36 @@ function startMock(port: number): http.Server {
 
     const slow = /(^|[-_])slow|slow$/.test(String(parsed.model ?? "")) || url.searchParams.has("slow");
     const userText = [...messages].reverse().find((m) => m.role === "user");
-    const reply = `收到：${typeof userText?.content === "string" ? userText.content.slice(0, 30) : "你好"}`;
+    const lastContent = typeof userText?.content === "string" ? userText.content : "";
+
+    // memory-extraction prompt (EXTRACT_PROMPT in core/memory.ts): the
+    // model must answer with a strict JSON array of memory items. We
+    // derive one deterministic fact from the transcript so the e2e
+    // suite can assert auto-extraction end to end.
+    let reply: string;
+    if (lastContent.includes("记忆管理器")) {
+      const m = /用户: (.*)/.exec(lastContent);
+      const fact = (m?.[1] ?? "用户喜欢深夜写代码").slice(0, 30);
+      reply = JSON.stringify([{ content: `自动记忆:${fact}`, kind: "fact", importance: 4 }]);
+    } else {
+      reply = `收到：${lastContent.slice(0, 30) || "你好"}`;
+    }
+
+    // non-streaming: plain JSON (chatComplete's no-onDelta path calls
+    // res.json()). Callers like memory extraction and title generation
+    // read the standard OpenAI shape `choices[0].message.content`.
+    if (parsed.stream === false) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: reply } }] }));
+      completed++;
+      return;
+    }
 
     res.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
     });
-
-    // non-streaming: one blob then close
-    if (parsed.stream === false) {
-      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`);
-      res.end();
-      completed++;
-      return;
-    }
 
     // streaming: a few quick chunks, then (for slow mocks) a long tail
     let i = 0;
