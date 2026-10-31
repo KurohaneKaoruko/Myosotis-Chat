@@ -81,7 +81,6 @@ pnpm --filter @myosotis/hub start        # 启动 Hub，默认 :8790
 
 Hub 会同时托管前端静态资源与 API，浏览器直接访问 `http://<服务器>:8790` 即可。
 建议用 Nginx / Caddy 反向代理并启用 HTTPS（Cookie 会自动带上 `Secure`）：
-
 ```nginx
 server {
   server_name myosotis.example.com;
@@ -109,6 +108,17 @@ pnpm --filter @myosotis/desktop tauri android dev
 
 壳内打开「设置 → 服务器」填入 Hub 地址，即进入服务器模式（与网页端共享数据）；
 不填则使用本机模式（IndexedDB 本地存储，完全离线）。
+
+### 4. 测试
+
+```bash
+pnpm test
+```
+
+- `packages/core`：纯函数单元测试（模型解析、群聊引擎、检索相似度…）
+- `apps/hub`：端到端套件（鉴权、SSE 聊天、实时同步、送达状态、停止生成、上传、记忆花园、剧情、群聊、搜索）。
+  自包含运行：自动拉起 mock 模型服务器（:9911）和一个使用临时数据目录的 Hub（:8791），
+  不会读写真实的 `data/`。若想对着手动启动的 Hub 跑，设置 `HUB_API` / `MOCK_API` 环境变量即可。
 
 ## 服务器环境变量
 

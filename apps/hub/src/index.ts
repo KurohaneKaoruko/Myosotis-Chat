@@ -280,10 +280,12 @@ for (const t of TABLES) {
     return { ok: true };
   });
   app.delete(`/api/data/${t}/:id`, async (req: any) => {
+    // read before delete: the removal broadcast carries the full entity
+    const removed =
+      t === "agents" ? db.getJson<Agent>(t, req.params.id) : undefined;
     db.deleteJson(t, req.params.id);
     if (t === "agents") {
-      const agent = db.getJson<Agent>("agents", req.params.id);
-      if (agent) bus.emit(req.userId, { type: "agent", agent, removed: true });
+      if (removed) bus.emit(req.userId, { type: "agent", agent: removed, removed: true });
     } else if (t === "memories") {
       bus.emit(req.userId, { type: "memory", memory: { id: req.params.id } as MemoryItem });
     }
