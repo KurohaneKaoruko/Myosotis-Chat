@@ -56,7 +56,15 @@ const uploads = new UploadStore(DATA_DIR);
 // server-side i18n port: log-friendly keys, no UI strings needed here
 setI18n({ t: (k) => k });
 
-const app = Fastify({ trustProxy: TRUST_PROXY, logger: { level: "warn" } });
+// bodyLimit must exceed MAX_UPLOAD_BYTES: uploads ride in as base64
+// data URLs (4/3 inflation + JSON envelope), so 8MB of image ≈ 11.3MB
+// of body. The Fastify default (1MiB) rejects those with a 413 before
+// our own limit check ever runs.
+const app = Fastify({
+  trustProxy: TRUST_PROXY,
+  logger: { level: "warn" },
+  bodyLimit: Math.ceil(MAX_UPLOAD_BYTES * 1.5),
+});
 await app.register(fastifyCookie);
 
 // ----------------------------------------------------------------

@@ -40,6 +40,39 @@ async function main() {
   const trav = await fetch(`${API}/uploads/..%2F..%2Fhub.db`);
   console.log(`  ${trav.status === 404 ? "✅" : "❌"} path traversal refused (${trav.status})`);
 
+  // a big-but-legal image (≈6MB of PNG bytes) must pass the server's own
+  // body parser — the Fastify default (1MiB) would 413 it before the
+  // upload size check ever runs (regression: bodyLimit < MAX_UPLOAD_BYTES)
+  const bigBlob = Buffer.alloc(6 * 1024 * 1024, 0x89);
+  const bigPNG =
+    "data:image/png;base64," +
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" +
+    bigBlob.toString("base64");
+  const bigRes = await fetch(`${API}/api/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ data: bigPNG }),
+  });
+  const big = await bigRes.json().catch(() => ({ raw: "not-json" }));
+  console.log(`  ${bigRes.status === 200 && big.url ? "✅" : "❌"} ~8MB body upload accepted (status=${bigRes.status}, ${(big.url ?? JSON.stringify(big)).slice(0, 40)})`);
+  if (big.path) {
+    const head = await fetch(API + big.path, { method: "HEAD" });
+    console.log(`  ${head.status === 200 ? "✅" : "❌"} big image served back (${head.status})`);
+  }
+
+  // an oversized body (base64 past MAX_UPLOAD_BYTES * 1.4) must still be
+  // rejected by the hub's own limit — and with 413, not a parse error
+  const hugePNG =
+    "data:image/png;base64," +
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" +
+    Buffer.alloc(12 * 1024 * 1024, 0x89).toString("base64");
+  const hugeRes = await fetch(`${API}/api/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ data: hugePNG }),
+  });
+  console.log(`  ${hugeRes.status === 413 ? "✅" : "❌"} oversized upload still 413 (status=${hugeRes.status})`);
+
   // a message with the image stores only the URL
   const convo = await api(cookie, "/api/conversations", {
     method: "POST",
