@@ -389,6 +389,9 @@ app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
     return res.status(404).send({ error: "not-found" });
   }
   const existing = db.getJson<ChatMessage>("messages", req.params.mid)!;
+  // the message must actually live in the URL's conversation — otherwise
+  // this PUT silently moves it into another conversation
+  if (existing.conversationId !== req.params.id) return res.status(404).send({ error: "not-found" });
   const merged = { ...existing, ...req.body, id: req.params.mid } as ChatMessage;
   db.putJson("messages", req.params.mid, req.userId, merged, { conversation_id: req.params.id, created_at: existing.createdAt });
   bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: merged });
@@ -401,6 +404,10 @@ app.post("/api/conversations/:id/messages", async (req: any, res: any) => {
   if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "no-convo" });
   const m = req.body as ChatMessage;
   if (!m?.id || typeof m.content !== "string") return res.status(400).send({ error: "bad-message" });
+  // POST is an upsert for client-created messages; it must never move an
+  // existing message out of the conversation it already lives in
+  const prior = db.getJson<ChatMessage>("messages", m.id);
+  if (prior && prior.conversationId !== req.params.id) return res.status(404).send({ error: "not-found" });
   db.putJson("messages", m.id, req.userId, m, { conversation_id: req.params.id, created_at: m.createdAt ?? now() });
   bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: m });
   return { ok: true };
@@ -410,6 +417,9 @@ function remoteDBcacheSync(_m: ChatMessage) {} // placeholder; cache lives clien
 
 app.delete("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
   if (!db.ownsRow(req.userId, "messages", req.params.mid)) return res.status(404).send({ error: "not-found" });
+  // only delete when the message really belongs to the URL's conversation
+  const existing = db.getJson<ChatMessage>("messages", req.params.mid)!;
+  if (existing.conversationId !== req.params.id) return res.status(404).send({ error: "not-found" });
   db.deleteJson("messages", req.params.mid);
   bus.emit(req.userId, { type: "delete-message", conversationId: req.params.id, messageId: req.params.mid });
   return { ok: true };
@@ -630,11 +640,18 @@ app.get("/api/channels", async (req: any) => {
 });
 
 app.put("/api/channels/onebot", async (req: any, res: any) => {
-  const { platformUserId, agentId } = req.body ?? {};
+  const { platformUserId, agentId, replace } = req.body ?? {};
   if (!platformUserId?.trim() || !agentId) return res.status(400).send({ error: "missing-fields" });
   // the bound agent must belong to the caller
   if (!db.ownsRow(req.userId, "agents", String(agentId))) return res.status(404).send({ error: "no-agent" });
-  db.putBinding("onebot", String(platformUserId).trim(), req.userId, String(agentId));
+  const key = String(platformUserId).trim();
+  // a channel id already bound to someone else may not be silently taken
+  // over — the caller must pass replace:true (the delete-then-rebind flow)
+  const existing = db.getBinding("onebot", key);
+  if (existing && existing.userId !== req.userId && !replace) {
+    return res.status(409).send({ error: "already-bound" });
+  }
+  db.putBinding("onebot", key, req.userId, String(agentId));
   return { ok: true };
 });
 

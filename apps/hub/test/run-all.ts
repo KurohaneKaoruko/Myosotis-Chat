@@ -26,6 +26,7 @@ const SUITES = [
   "group",
   "search",
   "scope",
+  "guards",
   "isolation",
 ];
 
@@ -142,7 +143,7 @@ for (const suite of SUITES) {
   console.log(`${status} ${suite.padEnd(9)} ${pass} passed, ${bad} failed`);
   if (code !== 0) {
     failed++;
-    console.log(out.split("\n").filter((l) => l.includes("❌") || l.includes("Error")).join("\n"));
+    console.log(out.split("\n").filter((l) => l.includes("❌") || l.includes("Error") || l.includes("FAILED")).join("\n"));
   }
   // a suite that ran zero assertions is suspicious (crashed early?) — show why
   if (pass === 0) console.log(out.trim());
