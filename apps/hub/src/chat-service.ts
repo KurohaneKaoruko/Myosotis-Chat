@@ -90,7 +90,12 @@ export function resolveStory(
   if (convo.mode !== "story" || !convo.scenarioId) {
     return { story: undefined, storyState: convo.storyState };
   }
-  const scenario = db.getJson<Scenario>("scenarios", convo.scenarioId);
+  // the scenario must belong to the conversation's owner — a conversation
+  // row may carry any scenarioId (the PUT route does not cross-check),
+  // and a foreign scenario's world/events must never reach the model
+  const scenario = db.ownsRow(userId, "scenarios", convo.scenarioId)
+    ? db.getJson<Scenario>("scenarios", convo.scenarioId)
+    : undefined;
   if (!scenario) return { story: undefined, storyState: convo.storyState };
 
   const triggered = [...(convo.storyState?.triggeredEventIds ?? [])];

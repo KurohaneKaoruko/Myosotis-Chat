@@ -4,7 +4,7 @@
 //   node --experimental-strip-types test/guards.test.ts
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
-import { API, login, api, seedBasics } from "./fixtures.ts";
+import { API, MOCK_API, login, api, seedBasics, resetLog, chatPrompt } from "./fixtures.ts";
 import { hashPassword } from "../src/auth.ts";
 
 let pass = 0;
@@ -184,6 +184,54 @@ async function main() {
 
   // cleanup: unbind so other suites are unaffected
   await api(cookieB, `/api/channels/onebot/${channelB}`, { method: "DELETE" });
+
+  console.log("== 3. story mode must not inject another tenant's scenario ==");
+  // A owns a secret scenario; B points its own story conversation at it
+  await api(a.cookie, "/api/data/scenarios/scn_secret", {
+    method: "PUT",
+    body: JSON.stringify({
+      id: "scn_secret", agentId: "ag1", name: "密卷",
+      worldSetting: "绝密世界设定机密标记XYZ。",
+      openingStory: "绝密开场。",
+      events: [{ id: "ev_s", name: "密事", trigger: "密钥", content: "绝密事件内容。" }],
+      plotPrompts: [], createdAt: 1, updatedAt: 1,
+    }),
+  });
+  // B needs its own provider/model/settings, otherwise its turn fails with
+  // no-model and never produces a prompt at all (the test would lie)
+  const pB = `pB${tag}`, mB = `mB${tag}`;
+  await api(cookieB, `/api/data/providers/${pB}`, {
+    method: "PUT",
+    body: JSON.stringify({ id: pB, name: "MockB", protocol: "openai", baseUrl: `${MOCK_API}/v1`, apiKey: "sk-test", createdAt: 1 }),
+  });
+  await api(cookieB, `/api/data/models/${mB}`, {
+    method: "PUT",
+    body: JSON.stringify({ id: mB, name: "mock-chat-b", providerId: pB, label: "MockB", roles: ["chat", "vision", "embedding"] }),
+  });
+  await api(cookieB, "/api/data/settings", {
+    method: "PUT",
+    body: JSON.stringify({ defaults: { chat: mB, vision: mB, embedding: mB } }),
+  });
+  const storyB = await api(cookieB, "/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({ agentId: agentB, title: "乙的剧情" }),
+  });
+  await api(cookieB, `/api/data/conversations/${storyB.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ ...storyB, mode: "story", scenarioId: "scn_secret" }),
+  });
+  await resetLog();
+  await fetch(`${API}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: cookieB },
+    body: JSON.stringify({ conversationId: storyB.id, text: "开始这个故事" }),
+  }).then((r) => r.text());
+  const bTurn = await chatPrompt("乙");
+  // the persona reaches the system prompt, so a non-empty hit proves the
+  // turn actually ran against the mock — the test cannot silently pass
+  ok("control: B's turn actually ran", bTurn.includes("乙"), "no prompt reached the mock");
+  ok("foreign scenario content never reaches the model",
+    bTurn.length > 0 && !bTurn.includes("机密标记XYZ") && !bTurn.includes("绝密开场"));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
