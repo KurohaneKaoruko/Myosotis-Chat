@@ -46,6 +46,18 @@ export class ChannelManager {
     };
   }
 
+  /** secrets masked — the web UI only shows whether they are set */
+  status() {
+    const mask = (v: string | undefined) => (v ? "••••••" : undefined);
+    return {
+      ...this.cfg,
+      token: mask(this.cfg.token),
+      accessToken: mask(this.cfg.accessToken),
+      running: !!this.adapter,
+      connected: this.adapter?.isConnected() ?? false,
+    };
+  }
+
   /** apply persisted runtime config (per-hub, admin level) */
   async init() {
     const saved = this.db.getMeta("onebot:config");
@@ -55,18 +67,6 @@ export class ChannelManager {
       } catch {}
     }
     if (this.cfg.enabled) this.start();
-  }
-
-  get config(): OnebotRuntimeConfig {
-    return { ...this.cfg };
-  }
-
-  status() {
-    return {
-      ...this.cfg,
-      running: !!this.adapter,
-      connected: this.adapter?.isConnected() ?? false,
-    };
   }
 
   async update(patch: Partial<OnebotRuntimeConfig>) {

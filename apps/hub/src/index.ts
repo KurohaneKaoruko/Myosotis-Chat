@@ -671,15 +671,19 @@ app.delete("/api/channels/onebot/:key", async (req: any, res: any) => {
   return { ok: true };
 });
 
-// runtime configuration of the OneBot adapter (restart-free)
+// runtime configuration of the OneBot adapter (restart-free).
+// The config is hub-global infrastructure, not per-tenant data; the
+// masked values returned by GET are never re-persisted (sending
+// "••••••" back keeps the real secret).
 app.put("/api/channels/onebot/config", async (req: any, res: any) => {
   const body = req.body ?? {};
   const patch: any = {};
+  const MASK = "••••••";
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
   if (body.mode === "forward" || body.mode === "reverse") patch.mode = body.mode;
   if (typeof body.url === "string") patch.url = body.url;
-  if (typeof body.token === "string") patch.token = body.token;
-  if (typeof body.accessToken === "string") patch.accessToken = body.accessToken;
+  if (typeof body.token === "string" && body.token !== MASK) patch.token = body.token;
+  if (typeof body.accessToken === "string" && body.accessToken !== MASK) patch.accessToken = body.accessToken;
   if (body.listenPort != null) patch.listenPort = Number(body.listenPort);
   if (typeof body.streaming === "boolean") patch.streaming = body.streaming;
   return { ok: true, onebot: await channels.update(patch) };
