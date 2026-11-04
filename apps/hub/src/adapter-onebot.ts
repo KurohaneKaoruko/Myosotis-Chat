@@ -10,6 +10,7 @@
 import WebSocket, { WebSocketServer } from "ws";
 import type { HubDB } from "./db.ts";
 import { runSingleTurn, listMessages } from "./chat-service.ts";
+import { runWithUser } from "./db.ts";
 import {
   buildContextMessages,
   chatComplete,
@@ -191,17 +192,21 @@ export class OnebotAdapter {
       if (!entities) return;
 
       const convo = this.ensureChannelConversation(entities, bindingKey);
-      runSingleTurn(
-        this.db,
-        entities.userId,
-        { agent: entities.agent, convo, settings: entities.settings, models: entities.models, providers: entities.providers },
-        body,
-        images,
-        undefined,
-        {
-          onDelta: (d) => this.streamEdit(ws, ev, d, true),
-          onMessage: (m) => this.streamEdit(ws, ev, m.content, false),
-        }
+      // channel turns bypass HTTP auth, so bind the storage scope here —
+      // otherwise the memory engine sees no user (retrieval empty, saves throw)
+      runWithUser(entities.userId, () =>
+        runSingleTurn(
+          this.db,
+          entities.userId,
+          { agent: entities.agent, convo, settings: entities.settings, models: entities.models, providers: entities.providers },
+          body,
+          images,
+          undefined,
+          {
+            onDelta: (d) => this.streamEdit(ws, ev, d, true),
+            onMessage: (m) => this.streamEdit(ws, ev, m.content, false),
+          }
+        )
       ).catch((e) => console.warn("[onebot] turn failed:", e));
     } catch (e) {
       console.warn("[onebot] message handling failed:", e);

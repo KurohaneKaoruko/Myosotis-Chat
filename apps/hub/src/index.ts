@@ -10,7 +10,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { installStoragePort, HubDB } from "./db.ts";
+import { installStoragePort, runWithUser, HubDB } from "./db.ts";
 import {
   hashPassword,
   verifyPassword,
@@ -105,12 +105,10 @@ app.addHook("preHandler", async (req: any, res: any) => {
 });
 
 // per-request storage port binding (multi-tenant isolation)
-installStoragePort(db, () => currentUserIdSlot.value);
-const currentUserIdSlot = { value: null as string | null };
-
-function bindUser(userId: string) {
-  currentUserIdSlot.value = userId;
-}
+// per-request storage port binding lives in AsyncLocalStorage now
+// (see db.ts): chat turns enter runWithUser(), so the memory engine
+// is scoped to the right tenant no matter how requests interleave.
+installStoragePort(db);
 
 // ----------------------------------------------------------------
 // bootstrap & auth routes
@@ -208,7 +206,7 @@ app.post("/api/auth/password", async (req: any, res: any) => {
 const TABLES = ["providers", "models", "agents", "prompts", "scenarios", "memories"] as const;
 
 app.get("/api/data", async (req: any) => {
-  bindUser(req.userId);
+
   const [providers, models, agents, prompts, scenarios, convos, memories] = await Promise.all([
     db.listJson("providers", req.userId) as Provider[],
     db.listJson("models", req.userId) as ModelConfig[],
@@ -238,7 +236,7 @@ app.get("/api/data", async (req: any) => {
 
 // mark a conversation as read (clears its badge on every device)
 app.post("/api/conversations/:id/read", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   // clients may POST with an empty body → don't let fastify reject it
   if (req.body === undefined) req.body = {};
   const convo = db.getJson<Conversation>("conversations", req.params.id);
@@ -273,7 +271,6 @@ function deepMergeSettings(base: Settings, patch: any): Settings {
 
 for (const t of TABLES) {
   app.put(`/api/data/${t}/:id`, async (req: any, res: any) => {
-    bindUser(req.userId);
     const item = req.body as any;
     if (item?.id && item.id !== req.params.id) return res.status(400).send({ error: "id-mismatch" });
     // ownership guard: refuse to overwrite another user's row
@@ -305,7 +302,7 @@ for (const t of TABLES) {
 
 // conversations live in their own table (indexed by agent + updated_at)
 app.put("/api/data/conversations/:id", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   const item = req.body as any;
   if (!item?.id) return res.status(400).send({ error: "bad-conversation" });
   if (db.getJson("conversations", req.params.id) !== undefined && !db.ownsRow(req.userId, "conversations", req.params.id)) {
@@ -339,7 +336,7 @@ function extraColsFor(t: string, item: any): Record<string, string | number> | u
 
 // ---- conversations & messages ----
 app.post("/api/conversations", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   const { agentId, title, kind, participants } = req.body ?? {};
   if (!agentId && kind !== "group") return res.status(400).send({ error: "agent-required" });
   const convo: Conversation = {
@@ -361,7 +358,7 @@ app.post("/api/conversations", async (req: any, res: any) => {
 });
 
 app.put("/api/conversations/:id", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   const existing = db.getJson<Conversation>("conversations", req.params.id);
   if (!existing || !db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   const merged = { ...existing, ...req.body, id: req.params.id } as Conversation;
@@ -371,7 +368,7 @@ app.put("/api/conversations/:id", async (req: any, res: any) => {
 });
 
 app.delete("/api/conversations/:id", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   const convo = db.getJson<Conversation>("conversations", req.params.id);
   if (!convo || !db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   db.raw.prepare("DELETE FROM messages WHERE conversation_id = ?").run(req.params.id);
@@ -381,13 +378,13 @@ app.delete("/api/conversations/:id", async (req: any, res: any) => {
 });
 
 app.get("/api/conversations/:id/messages", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "not-found" });
   return listMessages(db, req.userId, req.params.id);
 });
 
 app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   if (!db.ownsRow(req.userId, "conversations", req.params.id) || !db.ownsRow(req.userId, "messages", req.params.mid)) {
     return res.status(404).send({ error: "not-found" });
   }
@@ -400,7 +397,7 @@ app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
 
 // client-created messages (greetings, edits) — upsert
 app.post("/api/conversations/:id/messages", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "no-convo" });
   const m = req.body as ChatMessage;
   if (!m?.id || typeof m.content !== "string") return res.status(400).send({ error: "bad-message" });
@@ -420,7 +417,7 @@ app.delete("/api/conversations/:id/messages/:mid", async (req: any, res: any) =>
 
 // ---- global message search ----
 app.get("/api/search", async (req: any, res: any) => {
-  bindUser(req.userId);
+
   const q = String((req.query as any)?.q ?? "").trim();
   // keep the response shape stable: {query, results} even for empty queries
   if (q.length < 1) return { query: q, results: [] };
@@ -440,7 +437,7 @@ app.get("/api/search", async (req: any, res: any) => {
 
 // ---- memories ----
 app.get("/api/memories", async (req: any) => {
-  bindUser(req.userId);
+
   const agentId = (req.query as any).agentId as string | undefined;
   const all = db.listMemoriesForUser(req.userId);
   return agentId ? all.filter((m) => m.agentId === agentId) : all;
@@ -515,7 +512,9 @@ app.post("/api/chat", async (req: any, res: any) => {
   const convo = db.getJson<Conversation>("conversations", conversationId);
   if (!convo || !db.ownsRow(req.userId, "conversations", conversationId)) return res.status(404).send({ error: "no-convo" });
   const userId = req.userId;
-  bindUser(userId);
+  // the whole turn (and its detached memory-extraction continuations)
+  // runs inside this user's storage scope
+  return runWithUser(userId, async () => {
 
   // SSE stream setup
   res.raw.writeHead(200, {
@@ -609,6 +608,7 @@ app.post("/api/chat", async (req: any, res: any) => {
     activeStreams.delete(ac);
     if (streamByConvo.get(streamKey) === ac) streamByConvo.delete(streamKey);
   }
+  });
 });
 app.post("/api/chat/stop", async (req: any, res: any) => {
   const { conversationId } = req.body ?? {};

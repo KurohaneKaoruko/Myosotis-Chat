@@ -25,6 +25,7 @@ const SUITES = [
   "story",
   "group",
   "search",
+  "scope",
   "isolation",
 ];
 

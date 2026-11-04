@@ -3,6 +3,7 @@
 // One file, one database, WAL mode, prepared statements cached.
 // ================================================================
 import { DatabaseSync } from "node:sqlite";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { setStorage, type StoragePort } from "@myosotis/core";
 import type { ChatMessage, Conversation, MemoryItem } from "@myosotis/core";
 
@@ -299,23 +300,42 @@ export class HubDB {
 // core StoragePort over the hub database.
 // Memory retrieval is per-user (multi-tenant isolation: an agent
 // belongs to exactly one user, memories never cross accounts).
+//
+// The current user travels in an AsyncLocalStorage scope instead of
+// a module-level slot: chat turns are long async pipelines
+// (summarize → stream → fire-and-forget extraction), so a shared
+// mutable slot would leak one tenant's memories into another's turn
+// whenever requests interleave. Channel adapters (OneBot) never pass
+// through HTTP auth and run their turns with runWithUser() directly.
 // ---------------------------------------------------------------
-export function installStoragePort(db: HubDB, getUserId: () => string | null): void {
+
+const userScope = new AsyncLocalStorage<string>();
+
+/**
+ * Run `fn` with the storage port bound to `userId` for the whole
+ * async execution, including detached continuations spawned inside
+ * (memory extraction, title generation).
+ */
+export function runWithUser<T>(userId: string, fn: () => T): T {
+  return userScope.run(userId, fn);
+}
+
+export function installStoragePort(db: HubDB): void {
   const dbRaw = db.raw;
   const port: StoragePort = {
     async listMemories(agentId?: string): Promise<MemoryItem[]> {
-      const uidv = getUserId();
+      const uidv = userScope.getStore();
       if (!uidv) return [];
       const all = db.listMemoriesForUser(uidv);
       return agentId ? all.filter((m) => m.agentId === agentId) : all;
     },
     async saveMemory(item: MemoryItem): Promise<void> {
-      const uidv = getUserId();
+      const uidv = userScope.getStore();
       if (!uidv) throw new Error("not authenticated");
       db.putJson("memories", item.id, uidv, item, { agent_id: item.agentId, updated_at: item.updatedAt });
     },
     async touchMemories(ids: string[], at: number): Promise<void> {
-      const uidv = getUserId();
+      const uidv = userScope.getStore();
       if (!uidv) return;
       const stmt = dbRaw.prepare("UPDATE memories SET data = json_set(data, '$.lastHitAt', ?, '$.hitCount', json_extract(data,'$.hitCount') + 1) WHERE user_id = ? AND id = ?");
       for (const id of ids) stmt.run(at, uidv, id);
@@ -324,7 +344,7 @@ export function installStoragePort(db: HubDB, getUserId: () => string | null): v
       return db.getJson<Conversation>("conversations", id);
     },
     async saveConversation(c: Conversation): Promise<void> {
-      const uidv = getUserId();
+      const uidv = userScope.getStore();
       if (!uidv) throw new Error("not authenticated");
       db.putJson("conversations", c.id, uidv, c, { agent_id: c.agentId, updated_at: c.updatedAt });
     },
