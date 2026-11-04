@@ -2,7 +2,11 @@ import { API, MOCK_API, login, api, seedBasics, promptLog, resetLog, chatPrompt 
 
 // Verifies that "stop generation" actually aborts the upstream call:
 // the slow mock reports how many streams were cut short vs completed.
-const SLOW = "http://127.0.0.1:9912/v1";
+// the slow twin rides one port above the main mock (MOCK_PORT + 1);
+// deriving it keeps the suite usable on alternate port layouts
+const SLOW =
+  (process.env.MOCK_API ?? "http://127.0.0.1:9911").replace(/\/$/, "").replace(/\/v1$/, "")
+    .replace(/:(\d+)$/, (_m, p) => `:${Number(p) + 1}`) + "/v1";
 
 
 
@@ -58,7 +62,7 @@ async function main() {
   console.log("[test] stop response:", JSON.stringify(stopRes));
 
   await new Promise((r) => setTimeout(r, 2500));
-  const stats = await (await fetch("http://127.0.0.1:9912/stats")).json();
+  const stats = await (await fetch(SLOW.replace(/\/v1$/, "/stats"))).json();
   console.log("[test] mock stats:", JSON.stringify(stats));
   console.log("[test] stream received:", seen.includes("chunk") ? "some chunks" : "no chunks");
   void pump;
