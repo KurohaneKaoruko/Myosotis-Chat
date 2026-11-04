@@ -110,7 +110,7 @@ async function main() {
     body: JSON.stringify({ ...target, content: "被劫持了" }),
   });
   ok("POST upsert cannot hijack a foreign conversation's message",
-    hijack.status === 404, `status=${hijack.status}`);
+    hijack.status === 400 || hijack.status === 404, `status=${hijack.status}`);
   const afterHijack = await api(a.cookie, `/api/conversations/${convoA.id}/messages`);
   const intact = Array.isArray(afterHijack) ? afterHijack.find((m: any) => m.id === target.id) : null;
   ok("original message content intact", !!intact && intact.content === "守卫测试消息");
@@ -257,6 +257,33 @@ async function main() {
     method: "PUT",
     body: JSON.stringify({ enabled: false, token: "", accessToken: "" }),
   });
+
+  console.log("== 5. message JSON conversationId must match the URL ==");
+  // POST with a body pointing somewhere else must be rejected outright
+  const mismatch = await fetch(`${API}/api/conversations/${convoA.id}/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: a.cookie },
+    body: JSON.stringify({ id: `msgMis${tag}`, conversationId: convoB.id, role: "user", content: "错链", createdAt: 1 }),
+  });
+  ok("POST with mismatched JSON conversationId rejected (400)", mismatch.status === 400, `status=${mismatch.status}`);
+  // PUT must not let the body rewrite the conversation the message lives in
+  const rewrite = await fetch(`${API}/api/conversations/${convoA.id}/messages/${target.id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", cookie: a.cookie },
+    body: JSON.stringify({ conversationId: convoB.id }),
+  });
+  const afterRewrite = await api(a.cookie, `/api/conversations/${convoA.id}/messages`);
+  ok("PUT cannot rewrite a message's conversation via the body",
+    Array.isArray(afterRewrite) && afterRewrite.some((m: any) => m.id === target.id));
+  // the honest POST path (body agrees with the URL) still works
+  const honestId = `msgHonest${tag}`;
+  const honest = await api(a.cookie, `/api/conversations/${convoA.id}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ id: honestId, conversationId: convoA.id, role: "user", content: "正常链路", createdAt: 1 }),
+  });
+  const honestList = await api(a.cookie, `/api/conversations/${convoA.id}/messages`);
+  ok("honest POST still persists",
+    honest.ok !== false && Array.isArray(honestList) && honestList.some((m: any) => m.id === honestId && m.conversationId === convoA.id));
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);

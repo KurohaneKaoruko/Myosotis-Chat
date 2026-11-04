@@ -400,7 +400,7 @@ app.put("/api/conversations/:id/messages/:mid", async (req: any, res: any) => {
   // the message must actually live in the URL's conversation — otherwise
   // this PUT silently moves it into another conversation
   if (existing.conversationId !== req.params.id) return res.status(404).send({ error: "not-found" });
-  const merged = { ...existing, ...req.body, id: req.params.mid } as ChatMessage;
+  const merged = { ...existing, ...req.body, id: req.params.mid, conversationId: req.params.id } as ChatMessage;
   db.putJson("messages", req.params.mid, req.userId, merged, { conversation_id: req.params.id, created_at: existing.createdAt });
   bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: merged });
   return { ok: true };
@@ -412,11 +412,15 @@ app.post("/api/conversations/:id/messages", async (req: any, res: any) => {
   if (!db.ownsRow(req.userId, "conversations", req.params.id)) return res.status(404).send({ error: "no-convo" });
   const m = req.body as ChatMessage;
   if (!m?.id || typeof m.content !== "string") return res.status(400).send({ error: "bad-message" });
+  // the row's conversation column comes from the URL, so the JSON body
+  // must agree — a mismatched body would leave clients (which trust
+  // message.conversationId) seeing a conversation the row is not in
+  if (m.conversationId !== req.params.id) return res.status(400).send({ error: "conversation-mismatch" });
   // POST is an upsert for client-created messages; it must never move an
   // existing message out of the conversation it already lives in
   const prior = db.getJson<ChatMessage>("messages", m.id);
   if (prior && prior.conversationId !== req.params.id) return res.status(404).send({ error: "not-found" });
-  db.putJson("messages", m.id, req.userId, m, { conversation_id: req.params.id, created_at: m.createdAt ?? now() });
+  db.putJson("messages", m.id, req.userId, { ...m, conversationId: req.params.id }, { conversation_id: req.params.id, created_at: m.createdAt ?? now() });
   bus.emit(req.userId, { type: "message", conversationId: req.params.id, message: m });
   return { ok: true };
 });
