@@ -84,6 +84,10 @@ function startMock(port: number): http.Server {
     const messages: any[] = Array.isArray(parsed.messages) ? parsed.messages : [];
     const system = messages.find((m) => m.role === "system");
     if (system?.content) promptLog.push(String(system.content));
+    // the last user turn too — tests assert on what the model actually
+    // received (e.g. that vision images travel as the original data URL)
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUser) promptLog.push("[user] " + JSON.stringify(lastUser.content));
 
     const slow = /(^|[-_])slow|slow$/.test(String(parsed.model ?? "")) || url.searchParams.has("slow");
     const userText = [...messages].reverse().find((m) => m.role === "user");

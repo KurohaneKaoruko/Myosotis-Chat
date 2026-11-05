@@ -93,8 +93,15 @@ async function main() {
   });
   ok("upload works", !!up.path);
   if (up.path) {
+    // uploads are signature-guarded now: bare path 403s, and the sign
+    // endpoint won't sign a path that isn't referenced by any message
     const img = await fetch(API + up.path);
-    ok("upload served", img.status === 200);
+    ok("bare upload not served", img.status === 403);
+    const sign = await api(cookie, "/api/uploads/sign", {
+      method: "POST",
+      body: JSON.stringify({ paths: [up.path] }),
+    });
+    ok("unsigned-referenced upload not signed", !sign.signed?.[up.path]);
   }
 
   console.log(`\nPASS=${pass} FAIL=${fail}`);
