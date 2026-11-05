@@ -20,6 +20,12 @@ export default defineConfig({
         target: process.env.HUB_URL ?? "http://127.0.0.1:8791",
         changeOrigin: true,
       },
+      // signed image files too (the /api/uploads/sign handshake only
+      // helps if the <img> can load from the same origin in dev)
+      "/uploads": {
+        target: process.env.HUB_URL ?? "http://127.0.0.1:8791",
+        changeOrigin: true,
+      },
     },
     watch: {
       // rust build output is constantly locked while compiling

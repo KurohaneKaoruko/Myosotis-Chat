@@ -3,7 +3,6 @@ import { Icon } from "./ui";
 import { t, tf } from "../i18n";
 import { useStore } from "../store";
 import { apiBase } from "../lib/db";
-import { resolveImageUrl } from "../lib/uploads";
 import type { ChatMessage } from "@myosotis/core";
 
 // ================================================================

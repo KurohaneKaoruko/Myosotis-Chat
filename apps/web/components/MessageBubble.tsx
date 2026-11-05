@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, ChatMessage } from "@myosotis/core";
 import { useStore } from "../store";
 import { resolveModel, formatTime } from "@myosotis/core";
@@ -6,7 +6,7 @@ import { speakBrowser, playTtsBlob, stopAudio } from "../lib/speech";
 import { ttsSynthesize } from "@myosotis/core";
 import { Icon } from "./ui";
 import { t } from "../i18n";
-import { resolveImageUrl } from "../lib/uploads";
+import { ensureSignedImages, signedImageUrlSync } from "../lib/uploads";
 import Markdown from "./Markdown";
 
 // ================================================================
@@ -54,6 +54,24 @@ export default function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // hub mode: image URLs need a signature; batch-sign this message's
+  // images once (coalesced with the rest of the page) then re-render
+  const [signTick, setSignTick] = useState(0);
+  const images = useMemo(() => {
+    void signTick; // re-map after the batch signature lands
+    return (msg.images ?? []).map((img) => signedImageUrlSync(img) ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msg.images, signTick]);
+  const hasUnsigned = (msg.images?.length ?? 0) > 0 && images.some((u) => u === null);
+  useEffect(() => {
+    if (!hasUnsigned) return;
+    let alive = true;
+    ensureSignedImages([msg]).then(() => alive && setSignTick((n) => n + 1));
+    return () => {
+      alive = false;
+    };
+  }, [hasUnsigned, msg]);
   const settings = useStore((s) => s.settings);
   const models = useStore((s) => s.models);
   const providers = useStore((s) => s.providers);
@@ -272,15 +290,17 @@ export default function MessageBubble({
         )}
         {!!msg.images?.length && (
           <div className="images">
-            {msg.images.map((img, i) => (
-              <img
-                key={i}
-                src={resolveImageUrl(img)}
-                alt=""
-                loading="lazy"
-                onClick={() => setLightbox(resolveImageUrl(img))}
-              />
-            ))}
+            {msg.images.map((img, i) =>
+              images[i] ? (
+                <img
+                  key={i}
+                  src={images[i]!}
+                  alt=""
+                  loading="lazy"
+                  onClick={() => setLightbox(images[i]!)}
+                />
+              ) : null
+            )}
           </div>
         )}
         <div className={`bubble ${!isUser && !streaming ? "md" : ""} ${isUser && msg.status === "sending" ? "sending" : ""} ${isUser && msg.status === "error" ? "failed" : ""}`}>
