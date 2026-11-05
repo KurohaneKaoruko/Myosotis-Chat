@@ -29,6 +29,13 @@ import { ChannelManager } from "./channels.ts";
 import { bus } from "./events.ts";
 import { UploadStore, MAX_UPLOAD_BYTES } from "./uploads.ts";
 import {
+  SIGN_TTL_DAYS,
+  UPLOAD_NAME_RE,
+  signatureValid,
+  signingKey,
+  signUploadPathsForUser,
+} from "./signed-uploads.ts";
+import {
   DEFAULT_SETTINGS,
   uid,
   now,
@@ -734,11 +741,31 @@ app.post("/api/upload", async (req: any, res: any) => {
   return { url: `${proto}://${host}${saved.url}`, path: saved.url, bytes: saved.bytes, mime: saved.mime };
 });
 
+app.post("/api/uploads/sign", async (req: any, res: any) => {
+  const raw = req.body?.paths;
+  if (!Array.isArray(raw) || !raw.length) return res.status(400).send({ error: "bad-paths" });
+  if (raw.length > 500) return res.status(400).send({ error: "too-many" });
+  const { signed, ttlDays } = signUploadPathsForUser(db, req.userId, raw);
+  return { signed, ttlDays };
+});
+
 app.get("/uploads/:name", async (req: any, res: any) => {
-  const file = uploads.read(req.params.name);
+  const name = req.params.name;
+  const exp = Number(req.query.exp);
+  const sig = String(req.query.sig ?? "");
+  // every file access needs a valid, unexpired signature; a missing or
+  // tampered one is indistinguishable (403, no-store) so the failure
+  // cannot be cached and leaks nothing about whether the file exists
+  if (!UPLOAD_NAME_RE.test(name) || !Number.isFinite(exp) || exp * 1000 < Date.now() || !signatureValid(name, exp, sig, signingKey(db))) {
+    res.header("Cache-Control", "no-store");
+    return res.status(403).send({ error: "invalid-signature" });
+  }
+  const file = uploads.read(name);
   if (!file) return res.status(404).send({ error: "not-found" });
   res.type(file.mime);
-  res.header("Cache-Control", "public, max-age=31536000, immutable");
+  // content-addressed + signed: cacheable by anyone for as long as the
+  // URL stays valid; CDNs/proxies may serve it without revalidation
+  res.header("Cache-Control", `public, max-age=${SIGN_TTL_DAYS * 86400}, immutable`);
   return res.send(file.data);
 });
 
