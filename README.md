@@ -160,6 +160,21 @@ pnpm test
 - 记忆、会话、模型配置按用户隔离，跨账号不可见。
 - 建议始终通过 HTTPS 暴露 Hub。
 
+### 图片访问控制（签名 URL）
+
+`/uploads/` 下的图片文件按内容寻址（128-bit 哈希命名，不可穷举），但 URL 会经消息同步、
+浏览器历史、Referer 等途径泄漏，因此**所有文件读取都要求 HMAC 签名**：
+
+- 格式：`/uploads/<name>?exp=<unix秒>&sig=HMAC-SHA256(name|exp, 密钥)`，有效期 30 天。
+- 密钥为每实例随机生成，存于 `hub_meta` 表，永不下发客户端。
+- 无签名 / 篡改 / 过期一律 403（`Cache-Control: no-store`，失败结果不可被缓存）。
+- 客户端通过 `POST /api/uploads/sign` 批量签名（需登录）；端点只对**确实出现在
+  本人消息里**的路径签名——登录账号无法为任意哈希铸造 URL，跨租户签名返回空表。
+- 带有效签名的响应为 `Cache-Control: public, max-age=30d, immutable`（文件内容寻址
+  不可变，可被 CDN/代理安全缓存）。
+- 取舍说明：签名 URL 是能力凭证（capability）——持有人在有效期内可转发使用；轮换
+  `hub_meta` 中的密钥可立即作废全部已发 URL。
+
 ## 许可
 
 本项目采用 **GNU GPL v3.0 或更高版本**（SPDX: `GPL-3.0-or-later`）许可。
