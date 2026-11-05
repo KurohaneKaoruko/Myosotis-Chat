@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SUITES = [
   "smoke", "realtime", "delivery", "stop", "upload", "memory",
-  "story", "group", "search", "scope", "guards", "isolation",
+  "story", "group", "search", "scope", "guards", "isolation", "ratelimit",
 ];
 const API = "http://127.0.0.1:8793";
 const MOCK = "http://127.0.0.1:9941";

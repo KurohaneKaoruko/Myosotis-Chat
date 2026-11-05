@@ -11,6 +11,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { installStoragePort, runWithUser, HubDB } from "./db.ts";
+import { LoginRateLimiter, loginRateLimitHook } from "./rate-limit.ts";
 import {
   hashPassword,
   verifyPassword,
@@ -48,6 +49,19 @@ const PORT = Number(process.env.PORT ?? 8790);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const WEB_DIST = process.env.MYO_WEB_DIST ?? path.join(__dirname, "../../web/dist");
 const TRUST_PROXY = process.env.TRUST_PROXY === "1";
+
+// Login rate limiting knobs (env-tunable so tests can shrink them;
+// defaults: 5 failures/min per username, per-IP ×4, 30s backoff
+// doubling up to 15m). MYO_LOGIN_RATE_LIMIT=0 disables entirely.
+const LOGIN_RATE = {
+  maxPerUser: Number(process.env.MYO_LOGIN_RATE_MAX ?? 5),
+  ipMultiplier: Number(process.env.MYO_LOGIN_RATE_IP_MULTIPLIER ?? 4),
+  windowMs: Number(process.env.MYO_LOGIN_RATE_WINDOW_MS ?? 60_000),
+  lockoutMs: Number(process.env.MYO_LOGIN_RATE_LOCKOUT_MS ?? 30_000),
+  maxLockoutMs: Number(process.env.MYO_LOGIN_RATE_MAX_LOCKOUT_MS ?? 15 * 60_000),
+  disabled: process.env.MYO_LOGIN_RATE_LIMIT === "0",
+};
+const loginLimiter = new LoginRateLimiter(LOGIN_RATE);
 
 mkdirSync(DATA_DIR, { recursive: true });
 const db = new HubDB(path.join(DATA_DIR, "hub.db"));
@@ -142,16 +156,23 @@ app.post("/api/auth/setup", async (req: any, res: any) => {
   return { ok: true, username: username.trim() };
 });
 
-app.post("/api/auth/login", async (req: any, res: any) => {
+app.post("/api/auth/login", { preHandler: loginRateLimitHook(loginLimiter) }, async (req: any, res: any) => {
   const { username, password, totp } = req.body ?? {};
-  const user = db.getUserByUsername(String(username ?? ""));
+  const name = String(username ?? "");
+  const ip = (req as any).ip ?? "unknown";
+  const user = db.getUserByUsername(name);
   if (!user || !verifyPassword(String(password ?? ""), user.passwordHash)) {
+    loginLimiter.fail(name, ip); // only failures consume budget
     return res.status(401).send({ error: "bad-credentials" });
   }
   if (user.totpSecret) {
     if (!totp) return res.status(401).send({ error: "totp-required" });
-    if (!verifyTotp(user.totpSecret, String(totp))) return res.status(401).send({ error: "bad-totp" });
+    if (!verifyTotp(user.totpSecret, String(totp))) {
+      loginLimiter.fail(name, ip);
+      return res.status(401).send({ error: "bad-totp" });
+    }
   }
+  loginLimiter.success(name, ip); // a real user arriving clears their streak
   const token = newToken();
   db.createSession({ id: token, userId: user.id, createdAt: now(), expiresAt: Date.now() + 30 * 86400_000 });
   setSessionCookie(res, token, req.secure || TRUST_PROXY);

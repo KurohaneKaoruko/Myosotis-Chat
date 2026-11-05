@@ -129,6 +129,12 @@ pnpm test
 | `MYO_DATA_DIR` | `<repo>/data` | SQLite 数据目录 |
 | `MYO_WEB_DIST` | `apps/web/dist` | 前端静态资源目录 |
 | `TRUST_PROXY` | `0` | 置于反向代理后时设为 `1` |
+| `MYO_LOGIN_RATE_LIMIT` | `1` | 登录限流开关，设为 `0` 完全禁用 |
+| `MYO_LOGIN_RATE_MAX` | `5` | 每用户名滑动窗口内允许的失败次数 |
+| `MYO_LOGIN_RATE_IP_MULTIPLIER` | `4` | 每 IP 失败预算倍率（默认 ×4 → 20 次/分钟） |
+| `MYO_LOGIN_RATE_WINDOW_MS` | `60000` | 滑动窗口长度（毫秒） |
+| `MYO_LOGIN_RATE_LOCKOUT_MS` | `30000` | 首次锁定时长（毫秒），之后指数翻倍 |
+| `MYO_LOGIN_RATE_MAX_LOCKOUT_MS` | `900000` | 锁定时长上限（毫秒，默认 15 分钟） |
 | `ONEBOT_ENABLED` | `0` | 是否启用 OneBot 适配器 |
 | `ONEBOT_MODE` | `reverse` | `reverse`（napcat 主动连我们）/ `forward`（我们连 napcat） |
 | `ONEBOT_LISTEN_PORT` | `8081` | reverse 模式监听端口 |
